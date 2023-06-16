@@ -16,5 +16,5 @@ class Baseline(Logger):
 
     def build(self, data):
         s = time.time()
-        self.logger('No build method implemented for baseline.')
+        self.logger.info('No build method implemented for baseline.')
         return time.time() - s
