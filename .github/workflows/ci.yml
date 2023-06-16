@@ -44,11 +44,12 @@ jobs:
         run: |
           conda create -n env python=3.8
           conda activate env
-          conda install matplotlib
-          pip install h5py flake8
+          conda install matplotlib pandas scikit-learn
+          pip install h5py flake8 setuptools tqdm
       - name: Run benchmark
         shell: bash -el {0}
         run: |
           conda activate env
           flake8 --max-line-length=100 --max-complexity 8 search/*
+          pip install --editable .
           python3 search/search.py

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from urllib.request import urlretrieve
 import logging
+from li.Baseline import Baseline
 
 
 logging.basicConfig(
@@ -60,6 +61,19 @@ def run(kind, key, size="100K", k=30):
     n, d = data.shape
     LOG.info(f'Loaded downloaded data, shape: n={n}, d={d}')
     LOG.info(f'Loaded downloaded queries, shape: queries={queries.shape}')
+
+    baseline = Baseline()
+    build_t = baseline.build(data)
+    LOG.info(f'Build time: {build_t}')
+    # ef search(self, query_idx, queries, data, k=10):
+    results, search_t = baseline.search(
+        query_idx=0,
+        queries=queries,
+        data=data,
+        k=10
+    )
+    LOG.info(f'Results shape: {results.shape}, serach time: {search_t}')
+
     '''
     nlist = 128 # number of clusters/centroids to build the IVF from
 
