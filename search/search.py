@@ -6,11 +6,13 @@ from pathlib import Path
 from urllib.request import urlretrieve
 import logging
 
+
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s][%(levelname)-5.5s][%(name)-.20s] %(message)s'
 )
 LOG = logging.getLogger(__name__)
+
 
 def download(src, dst):
     if not os.path.exists(dst):
@@ -27,9 +29,12 @@ def prepare(kind, size):
     }
 
     for version, url in task.items():
-        download(url, os.path.join("data", kind, size, f"{version}.h5"))
+        target_path = os.path.join("data", kind, size, f"{version}.h5")
+        download(url, target_path)
+        assert os.path.exists(target_path), f"Failed to download {url}"
 
 
+'''
 def store_results(dst, algo, kind, D, I, buildtime, querytime, params, size):
     os.makedirs(Path(dst).parent, exist_ok=True)
     f = h5py.File(dst, 'w')
@@ -42,11 +47,12 @@ def store_results(dst, algo, kind, D, I, buildtime, querytime, params, size):
     f.create_dataset('knns', I.shape, dtype=I.dtype)[:] = I
     f.create_dataset('dists', D.shape, dtype=D.dtype)[:] = D
     f.close()
+'''
 
 
 def run(kind, key, size="100K", k=30):
     LOG.info(f'Running: kind={kind}, key={key}, size={size}')
-    
+
     prepare(kind, size)
 
     data = np.array(h5py.File(os.path.join("data", kind, size, "dataset.h5"), "r")[key])
@@ -69,9 +75,9 @@ def run(kind, key, size="100K", k=30):
         queries = np.array(queries).view(dtype="uint8")
     else:
         # if kind == "clip768":
-        # convert vectors from float16 to float32 
+        # convert vectors from float16 to float32
         # normalize vectors
-        # dot product / angle as distance (1-cosine) 
+        # dot product / angle as distance (1-cosine)
         raise Exception(f"unsupported input type {kind}")
 
     print(f"Training index on {data.shape}")
@@ -94,8 +100,17 @@ def run(kind, key, size="100K", k=30):
 
         identifier = f"index=({index_identifier}),query=(nprobe={nprobe})"
 
-        store_results(os.path.join("result/", kind, size, f"{identifier}.h5"), "faissIVF", kind, D, I, elapsed_build, elapsed_search, identifier, size)
+        store_results(
+            os.path.join(
+                "result/",
+                kind,
+                size,
+                f"{identifier}.h5"
+            ),
+            "faissIVF", kind, D, I, elapsed_build, elapsed_search, identifier, size
+        )
     '''
+
 
 if __name__ == "__main__":
 
@@ -113,4 +128,4 @@ if __name__ == "__main__":
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
 
-    run("clip768v2", "clip768", args.size, args.k)
+    run("clip768v2", "emb", args.size, args.k)
