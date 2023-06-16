@@ -1,8 +1,53 @@
+name: CI
+
+on:
+  push:
+    # Sequence of patterns matched against refs/heads
+    branches:    
+      # Push events on main branch
+      - main
+      - master
+    # Sequence of patterns matched against refs/tags
+    tags: '*'
+
 jobs:
-  build:
+  test:
+    name: ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1.8'
+        os:
+          - ubuntu-latest
+        arch:
+          - x64
+        exclude:
+          - os: macOS-latest
+            arch: x86
+        python-version: ["3.8"]
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: 'true'
-      - name: Run a one-line script
-        run: echo Hello world
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        shell: bash -el {0}
+        run: |
+          conda create -n env python=3.8
+          conda activate env
+          conda install matplotlib
+          pip install h5py
+      - name: Run benchmark
+        shell: bash -el {0}
+        run: |
+          conda activate envs
+          python3 search/search.py
