@@ -49,5 +49,5 @@ jobs:
       - name: Run benchmark
         shell: bash -el {0}
         run: |
-          conda activate envs
+          conda activate env
           python3 search/search.py
