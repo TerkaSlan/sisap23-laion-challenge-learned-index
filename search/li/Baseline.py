@@ -1,6 +1,7 @@
 from li.Logger import Logger
 from li.utils import pairwise_cosine
 import time
+import numpy as np
 
 
 class Baseline(Logger):
@@ -8,11 +9,12 @@ class Baseline(Logger):
     def __init__(self):
         self.pq = []
 
-    def search(self, query_idx, queries, data, k=10):
+    def search(self, queries, data, k=10):
         s = time.time()
-        query = queries.iloc[[query_idx]]
-        anns = pairwise_cosine(query, data)[0].argsort()[:k]
-        return anns, time.time() - s
+        anns = pairwise_cosine(data, queries)
+        nns = anns.argsort()[:k].T + 1
+        dists = np.sort(anns)[:k].T
+        return dists, nns, time.time() - s
 
     def build(self, data):
         s = time.time()

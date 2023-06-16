@@ -53,3 +53,5 @@ jobs:
           flake8 --max-line-length=100 --max-complexity 8 search/*
           pip install --editable .
           python3 search/search.py
+          python3 eval/eval.py
+          python3 eval/plot.py res.csv
