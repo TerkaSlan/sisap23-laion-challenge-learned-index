@@ -3,6 +3,7 @@ from li.utils import pairwise_cosine
 import time
 import numpy as np
 
+
 class Baseline(Logger):
 
     def __init__(self):

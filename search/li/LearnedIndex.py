@@ -4,7 +4,6 @@ from sklearn.linear_model import LogisticRegression
 from li.Logger import Logger
 from li.utils import pairwise_cosine
 import time
-from tqdm import tqdm
 
 
 class LearnedIndex(Logger):
@@ -15,7 +14,7 @@ class LearnedIndex(Logger):
 
     def search(self, queries, data, n_buckets=2, k=10):
         """ Search for k nearest neighbors for each query in queries.
-        
+
         Parameters
         ----------
         queries : np.array
@@ -26,7 +25,7 @@ class LearnedIndex(Logger):
             Number of most similar buckets to search in.
         k : int
             Number of nearest neighbors to search for.
-        
+
         Returns
         -------
         dists : np.array
@@ -66,7 +65,6 @@ class LearnedIndex(Logger):
                 # *_final arrays now have shape (queries.shape[0], k*2)
                 anns_final = np.hstack((anns_final, anns))
                 dists_final = np.hstack((dists_final, dists))
-    
                 # gets the sorted indices of the stacked dists
                 idx_sorted = dists_final.argsort(kind='stable', axis=1)[:, :k]
                 # indexes the final arrays with the sorted indices
@@ -75,14 +73,14 @@ class LearnedIndex(Logger):
                 idx[1] = idx_sorted
                 dists_final = dists_final[tuple(idx)]
                 anns_final = anns_final[tuple(idx)]
-    
+
                 assert anns_final.shape == dists_final.shape == (queries.shape[0], k)
 
         return dists_final, anns_final, time.time() - s
 
     def search_single(self, queries, data, data_categories, predicted_categories, k=10):
         """ Search for k nearest neighbors for each query in queries.
-        
+
         Parameters
         ----------
         queries : np.array
@@ -91,7 +89,7 @@ class LearnedIndex(Logger):
             Data to search in.
         k : int
             Number of nearest neighbors to search for.
-        
+
         Returns
         -------
         anns : np.array
@@ -110,17 +108,17 @@ class LearnedIndex(Logger):
             ann_relative = seq_search_dists.argsort()[:, :k]
             nns[cat_idxs] = np.array(bucket_obj_indexes)[ann_relative] + 1
             dists[cat_idxs] = np.take_along_axis(seq_search_dists, ann_relative, axis=1)
-        
+
         return dists, nns
 
     def build(self, data):
         """ Build the index.
-        
+
         Parameters
         ----------
-        data : np.array 
+        data : np.array
             Data to build the index on.
-        
+
         Returns
         -------
         time : float
@@ -141,7 +139,7 @@ class LearnedIndex(Logger):
 
     def create_category(self, data, random_state_offset):
         """ Create categories for multi-class classification.
-        
+
         Parameters
         ----------
         data : np.array
@@ -166,14 +164,14 @@ class LearnedIndex(Logger):
 
     def get_train_labels(self, data, n_categories=100):
         """ Get labels for training.
-        
+
         Parameters
         ----------
         data : np.array
             Data to get labels for.
         n_categories : int
             Number of categories to create.
-        
+
         Returns
         -------
         df_all : pd.DataFrame
@@ -205,14 +203,14 @@ class LearnedIndex(Logger):
 
     def train_index(self, data, labels_df):
         """ Train the index.
-        
+
         Parameters
         ----------
         data : np.array
             Data to train the index on.
         labels_df : pd.DataFrame
             DataFrame with labels.
-        
+
         Returns
         -------
         model : sklearn.linear_model.LogisticRegression
