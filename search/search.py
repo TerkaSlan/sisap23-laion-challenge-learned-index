@@ -50,8 +50,8 @@ def store_results(dst, algo, kind, dists, anns, buildtime, querytime, params, si
     f.close()
 
 
-def run(kind, key, size="100K", k=11, index_type='baseline'):
-    LOG.info(f'Running: kind={kind}, key={key}, size={size}')
+def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None):
+    LOG.info(f'Running with: kind={kind}, key={key}, size={size}, n_buckets={n_buckets}')
 
     prepare(kind, size)
 
@@ -65,7 +65,6 @@ def run(kind, key, size="100K", k=11, index_type='baseline'):
         baseline = Baseline()
         build_t = baseline.build(data)
         LOG.info(f'Build time: {build_t}')
-        # ef search(self, query_idx, queries, data, k=10):
         dists, nns, search_t = baseline.search(
             queries=queries,
             data=data,
@@ -76,12 +75,11 @@ def run(kind, key, size="100K", k=11, index_type='baseline'):
         li = LearnedIndex()
         build_t = li.build(data)
         LOG.info(f'Build time: {build_t}')
-        # ef search(self, query_idx, queries, data, k=10):
         dists, nns, search_t = li.search(
             queries=queries,
             data=data,
             k=k,
-            n_buckets=10
+            n_buckets=n_buckets
         )
         identifier = 'li-index'
     else:
@@ -118,9 +116,13 @@ if __name__ == "__main__":
         "--k",
         default=10,
     )
+    parser.add_argument(
+        "--n-buckets",
+        default=11,
+    )
 
     args = parser.parse_args()
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
 
-    run("clip768v2", "emb", args.size, args.k, 'learned-index')
+    run("clip768v2", "emb", args.size, args.k, 'learned-index', args.n_buckets)
