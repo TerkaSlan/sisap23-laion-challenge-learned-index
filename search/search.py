@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.request import urlretrieve
 import logging
 from li.Baseline import Baseline
+from li.LearnedIndex import LearnedIndex
 
 
 logging.basicConfig(
@@ -49,7 +50,7 @@ def store_results(dst, algo, kind, dists, anns, buildtime, querytime, params, si
     f.close()
 
 
-def run(kind, key, size="100K", k=30):
+def run(kind, key, size="100K", k=11, index_type='baseline'):
     LOG.info(f'Running: kind={kind}, key={key}, size={size}')
 
     prepare(kind, size)
@@ -60,18 +61,34 @@ def run(kind, key, size="100K", k=30):
     LOG.info(f'Loading downloaded data, shape: n={n}, d={d}')
     LOG.info(f'Loading downloaded queries, shape: queries={queries.shape}')
 
-    baseline = Baseline()
-    build_t = baseline.build(data)
-    LOG.info(f'Build time: {build_t}')
-    # ef search(self, query_idx, queries, data, k=10):
-    dists, nns, search_t = baseline.search(
-        queries=queries,
-        data=data,
-        k=10
-    )
-    LOG.info(f'dists={dists.shape}, nns={nns.shape} serach time: {search_t}')
+    if index_type == 'baseline':
+        baseline = Baseline()
+        build_t = baseline.build(data)
+        LOG.info(f'Build time: {build_t}')
+        # ef search(self, query_idx, queries, data, k=10):
+        dists, nns, search_t = baseline.search(
+            queries=queries,
+            data=data,
+            k=k
+        )
+        identifier = 'li-baseline'
+    elif index_type == 'learned-index':
+        li = LearnedIndex()
+        build_t = li.build(data)
+        LOG.info(f'Build time: {build_t}')
+        # ef search(self, query_idx, queries, data, k=10):
+        dists, nns, search_t = li.search(
+            queries=queries,
+            data=data,
+            k=k,
+            n_buckets=10
+        )
+        identifier = 'li-index'
+    else:
+        raise Exception(f'Unknown index type: {index_type}')
 
-    identifier = 'li-baseline'
+    LOG.info(f'dists={dists.shape}, nns={nns.shape} search time: {search_t}')
+
     store_results(
         os.path.join(
             "result/",
@@ -79,7 +96,14 @@ def run(kind, key, size="100K", k=30):
             size,
             f"{identifier}.h5"
         ),
-        "LI-BASELINE", kind, dists, nns, build_t, search_t, identifier, size
+        identifier.capitalize(),
+        kind,
+        dists,
+        nns,
+        build_t,
+        search_t,
+        identifier,
+        size
     )
 
 
@@ -92,11 +116,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--k",
-        default=30,
+        default=10,
     )
 
     args = parser.parse_args()
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
 
-    run("clip768v2", "emb", args.size, args.k)
+    run("clip768v2", "emb", args.size, args.k, 'learned-index')

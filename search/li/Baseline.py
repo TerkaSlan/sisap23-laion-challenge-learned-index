@@ -3,17 +3,16 @@ from li.utils import pairwise_cosine
 import time
 import numpy as np
 
-
 class Baseline(Logger):
 
     def __init__(self):
-        self.pq = []
+        pass
 
     def search(self, queries, data, k=10):
         s = time.time()
-        anns = pairwise_cosine(data, queries)
-        nns = anns.argsort()[:k].T + 1
-        dists = np.sort(anns)[:k].T
+        anns = pairwise_cosine(data, queries).T
+        nns = anns.argsort()[:, :k] + 1
+        dists = np.sort(anns)[:, :k]
         return dists, nns, time.time() - s
 
     def build(self, data):
