@@ -3,6 +3,11 @@ data
 *.png
 result
 **/*/.ipynb_checkpoints
+.ipynb_checkpoints/
 */*.egg-info
 **/*/__pycache__
 eval/*
+*.e*
+*.o*
+*.log
+**/job-logs/*

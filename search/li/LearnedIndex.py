@@ -4,6 +4,7 @@ from sklearn.linear_model import LogisticRegression
 from li.Logger import Logger
 from li.utils import pairwise_cosine
 import time
+from sklearn.metrics import accuracy_score
 
 
 class LearnedIndex(Logger):
@@ -111,7 +112,7 @@ class LearnedIndex(Logger):
 
         return dists, nns
 
-    def build(self, data):
+    def build(self, data, n_categories=100):
         """ Build the index.
 
         Parameters
@@ -126,7 +127,7 @@ class LearnedIndex(Logger):
         """
         s = time.time()
         data = pd.DataFrame(data)
-        labels_df = self.get_train_labels(data)
+        labels_df = self.get_train_labels(data, n_categories=n_categories)
         time_labels = time.time() - s
         s2 = time.time()
         model = self.train_index(data, labels_df)
@@ -219,4 +220,5 @@ class LearnedIndex(Logger):
         X = data.loc[labels_df.object_id.astype(int)]
         y = labels_df.category_id.astype(int)
         model = LogisticRegression(random_state=2023, max_iter=500).fit(X, y)
+        print(f'Accuracy on train data: {accuracy_score(model.predict(X), y)}')
         return model
