@@ -2,8 +2,8 @@ from typing import Tuple
 import torch
 from torch import nn
 import torch.nn.functional as nnf
-import time
 import numpy as np
+
 
 class Model(nn.Module):
     def __init__(self, input_dim=768, output_dim=1000):
@@ -18,6 +18,7 @@ class Model(nn.Module):
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         outputs = self.layers(x)
         return outputs
+
 
 def get_device() -> torch.device:
     """ Gets the `device` to be used by torch.
@@ -62,11 +63,11 @@ def train(
     if logger:
         logger.info(f'Epochs: {epochs}, step: {step}')
     for ep in range(epochs):
+        pred_y = model(data_X.to(device))
+        curr_loss = loss(pred_y, data_y.to(device))
         if ep % step == 0 and ep != 0:
             if logger:
                 logger.info(f'Epoch {ep} | Loss {curr_loss.item()}')
-        pred_y = model(data_X.to(device))
-        curr_loss = loss(pred_y, data_y.to(device))
         losses.append(curr_loss.item())
 
         model.zero_grad()

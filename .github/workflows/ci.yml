@@ -50,7 +50,8 @@ jobs:
         shell: bash -el {0}
         run: |
           conda activate env
-          flake8 --max-line-length=100 --max-complexity 8 search/*
+          flake8 --max-line-length=100 --max-complexity 8 search/*.py
+          flake8 --max-line-length=100 --max-complexity 8 search/li/*.py
           pip install --editable .
           python3 search/search.py
           python3 eval/eval.py

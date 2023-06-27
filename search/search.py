@@ -51,7 +51,10 @@ def store_results(dst, algo, kind, dists, anns, buildtime, querytime, params, si
 
 
 def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_categories=None):
-    LOG.info(f'Running with: kind={kind}, key={key}, size={size}, n_buckets={n_buckets}, n_categories={n_categories}')
+    LOG.info(
+        f'Running with: kind={kind}, key={key}, size={size}'
+        f'n_buckets={n_buckets}, n_categories={n_categories}'
+    )
 
     prepare(kind, size)
 
@@ -142,7 +145,6 @@ if __name__ == "__main__":
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
 
-    #run("clip768v2", "emb", args.size, args.k, 'learned-index', args.n_buckets)
     run(
         "pca32v2",
         "pca32",

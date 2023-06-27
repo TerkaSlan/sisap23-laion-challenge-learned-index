@@ -1,16 +1,14 @@
 import numpy as np
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
 from li.Logger import Logger
 from li.utils import pairwise_cosine
 import time
 from sklearn.metrics import accuracy_score
-import time
-from tqdm import tqdm
 import gc
 from sklearn.metrics.pairwise import cosine_similarity
-from li.model import get_device, Model, data_to_torch, train, predict, data_X_to_torch, predict_proba
+from li.model import get_device, Model, data_to_torch, train, \
+    predict, data_X_to_torch, predict_proba
 import torch
+
 
 def get_random_indexes(size, dataset_size, seed):
     rng = np.random.default_rng(seed)
@@ -143,34 +141,28 @@ class LearnedIndex(Logger):
         """
         s = time.time()
         self.logger.info(
-            f'Getting train data.'
+            'Getting train data.'
         )
         train_data, train_labels, training_indexes = self.get_train_data(f)
         time_labels = time.time() - s
         s2 = time.time()
         self.logger.info(
-            f'Training the index model.'
+            'Training the index model.'
         )
         train_predictions, model = self.train_index(train_data, train_labels)
         self.logger.info(
-            f'Trained the index model, collected train preds.'
+            'Trained the index model, collected train preds.'
         )
         self.logger.info(
             f'Accuracy: {accuracy_score(train_labels, train_predictions)}.'
         )
-        #predict_indexes = np.setdiff1d(
-        #    np.arange(0, self.dataset_size), training_indexes.flatten()
-        #)
-        #self.logger.info(
-        #    f'loading test data for prediction of shape: {predict_indexes.shape}'
-        #)
         all_data = f[:, :]
         self.logger.info(
-            f'loaded all data for prediction'
+            'loaded all data for prediction'
         )
         pred_data_t = data_X_to_torch(all_data)
         self.logger.info(
-            f'predicting with all data'
+            'predicting with all data'
         )
         test_predictions = predict(model, get_device(), pred_data_t)
         self.logger.info(
@@ -218,23 +210,25 @@ class LearnedIndex(Logger):
         """
         final_dists_per_category = self.dists_per_category // 10
 
-        training_indexes_all = np.empty((0,final_dists_per_category))
-        training_data = np.empty((0,self.dataset_dim))
+        training_indexes_all = np.empty((0, final_dists_per_category))
+        training_data = np.empty((0, self.dataset_dim))
         prev = 0
 
         pivot_indexes = get_random_indexes(self.n_categories, self.dataset_size, self.seed)
+        self.seed += 1
         assert pivot_indexes.shape == (self.n_categories, )
         self.logger.info(
-            f'Loading pivot data.'
+            'Loading pivot data.'
         )
         pivot_data = f[pivot_indexes, :]
         self.logger.info(
-            f'Loaded pivot_data.'
+            'Loaded pivot_data.'
         )
-        assert pivot_data.shape == (self.n_categories, self.dataset_dim), f'{(self.n_categories, self.dataset_dim)} != {pivot_data.shape}'
+        assert pivot_data.shape == (self.n_categories, self.dataset_dim), \
+            f'{(self.n_categories, self.dataset_dim)} != {pivot_data.shape}'
 
         self.logger.info(
-            f'Starting labels collecting loop.'
+            'Starting labels collecting loop.'
         )
         for batch, pivot in zip(
             range(self.dists_per_category, self.dataset_size+1, self.dists_per_category),
@@ -251,23 +245,28 @@ class LearnedIndex(Logger):
             gc.collect()
             prev = batch
         self.logger.info(
-            f'Finished labels collecting loop.'
+            'Finished labels collecting loop.'
         )
 
-        labels = np.array([np.array([i for _ in range(final_dists_per_category)]) for i in range(self.n_categories)])
+        labels = np.array([
+            np.array([
+                i for _ in range(final_dists_per_category)
+            ]) for i in range(self.n_categories)
+        ])
         labels = labels.reshape(labels.shape[0]*labels.shape[1])
         self.logger.info(
-            f'Created labels.'
+            'Created labels.'
         )
+        exp_out = self.n_categories*final_dists_per_category
         assert training_data.shape == (
-            self.n_categories*final_dists_per_category, self.dataset_dim
-        ), f'{training_data.shape} != {(self.n_categories*final_dists_per_category, self.dataset_dim)}'
+            exp_out, self.dataset_dim
+        ), f'{training_data.shape} != {(exp_out, self.dataset_dim)}'
         assert labels.shape == (training_indexes_all.shape[0]*training_indexes_all.shape[1], ),\
-             f'{labels.shape} != {training_indexes_all.shape[0]*training_indexes_all.shape[1]}'
+            f'{labels.shape} != {training_indexes_all.shape[0]*training_indexes_all.shape[1]}'
 
         return training_data, labels, training_indexes_all
 
-    def train_index(self, data, labels):
+    def train_index(self, data, labels, epochs=100):
         """ Train the index.
 
         Parameters
@@ -289,15 +288,23 @@ class LearnedIndex(Logger):
         device = get_device()
         data_X, data_y = data_to_torch(data, labels)
         self.logger.info(
-            f'Prepared everything, starting training.'
+            'Prepared everything, starting training.'
         )
-        _, model = train(data_X, data_y, model, optimizer, device, loss, epochs=100, logger=self.logger)
+        _, model = train(
+            data_X,
+            data_y,
+            model,
+            optimizer,
+            device,
+            loss,
+            epochs=epochs,
+            logger=self.logger
+        )
         self.logger.info(
-            f'Finished training, collecting predictions.'
+            'Finished training, collecting predictions.'
         )
         predictions = predict(model, device, data_X)
         self.logger.info(
-            f'Collected training predictions.'
+            'Collected training predictions.'
         )
         return predictions, model
-        

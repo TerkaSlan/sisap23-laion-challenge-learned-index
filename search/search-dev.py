@@ -7,16 +7,7 @@ from urllib.request import urlretrieve
 import logging
 from li.Baseline import Baseline
 from li.LearnedIndex10M import LearnedIndex
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-import time
 import torch
-from tqdm import tqdm
-import gc
-
-def pairwise_cosine(x, y):
-    r = cosine_similarity(x, y)
-    return r
 
 
 logging.basicConfig(
@@ -24,6 +15,7 @@ logging.basicConfig(
     format='[%(asctime)s][%(levelname)-5.5s][%(name)-.20s] %(message)s'
 )
 LOG = logging.getLogger(__name__)
+
 
 def download(src, dst):
     if not os.path.exists(dst):
@@ -59,8 +51,20 @@ def store_results(dst, algo, kind, dists, anns, buildtime, querytime, params, si
     f.close()
 
 
-def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_categories=None, save=True):
-    LOG.info(f'Running with: kind={kind}, key={key}, size={size}, n_buckets={n_buckets}, n_categories={n_categories}')
+def run(
+    kind,
+    key,
+    size='100K',
+    k=10,
+    index_type='baseline',
+    n_buckets=None,
+    n_categories=None,
+    save=True
+):
+    LOG.info(
+        f'Running with: kind={kind}, key={key}, size={size},'
+        f' n_buckets={n_buckets}, n_categories={n_categories}'
+    )
 
     prepare(kind, size)
 
@@ -91,16 +95,18 @@ def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_c
             "pca32v2": 32
         }
 
-
         f = h5py.File(os.path.join("data", kind, size, "dataset.h5"), "r")
-        LOG.info(f'Instantiating LearnedIndex with dataset_shape={size_mapping[size]}, {kind_mapping[kind]}, n_categories={n_categories}')
+        LOG.info(
+            f'Instantiating LearnedIndex with dataset_shape={size_mapping[size]}'
+            f', {kind_mapping[kind]}, n_categories={n_categories}'
+        )
         li = LearnedIndex(
             dataset_shape=(size_mapping[size], kind_mapping[kind]),
             n_categories=n_categories
         )
         model, build_t = li.build(f[key])
         if save:
-            save_dir = f'../models/{kind}-{key}-{size}' 
+            save_dir = f'../models/{kind}-{key}-{size}'
             LOG.info(f'Saving into {save_dir}')
             Path(save_dir).mkdir(parents=True, exist_ok=True)
             torch.save(model.state_dict(), f'{save_dir}-best-model.pt')
@@ -139,16 +145,17 @@ def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_c
     else:
         raise Exception(f'Unknown index type: {index_type}')
 
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset",
-        default="pca32v2" # clip768v2
+        default="pca32v2"
     )
     parser.add_argument(
         "--emb",
-        default="pca32" # emb
+        default="pca32"
     )
     parser.add_argument(
         "--size",
@@ -192,7 +199,6 @@ if __name__ == "__main__":
         save=True
     )
 
-    #run("clip768v2", "emb", args.size, args.k, 'learned-index', args.n_buckets)
     """
     run(
         "pca32v2",
