@@ -1,9 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as nnf
-from dlmi.utils import get_device
 import numpy as np
-from dlmi.Logger import Logger
+from li.Logger import Logger
 from typing import Tuple
 import torch.utils.data
 
@@ -43,6 +42,21 @@ def data_to_torch(data, labels) -> Tuple[torch.FloatTensor, torch.LongTensor]:
     data_X = data_X_to_torch(data)
     data_y = torch.as_tensor(torch.from_numpy(labels), dtype=torch.long)
     return data_X, data_y
+
+
+def get_device() -> torch.device:
+    """ Gets the `device` to be used by torch.
+    This arugment is needed to operate with the PyTorch model instance.
+
+    Returns
+    ------
+    torch.device
+        Device
+    """
+    use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda:0' if use_cuda else 'cpu')
+    torch.backends.cudnn.benchmark = True
+    return device
 
 
 class NeuralNetwork(Logger):
