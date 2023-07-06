@@ -37,6 +37,9 @@ def prepare(kind, size):
 
 
 def store_results(dst, algo, kind, dists, anns, buildtime, querytime, params, size):
+    LOG.info(
+        f'Storing as `{dst}`'
+    )
     os.makedirs(Path(dst).parent, exist_ok=True)
     f = h5py.File(dst, 'w')
     f.attrs['algo'] = algo
@@ -68,26 +71,14 @@ def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_c
         baseline = Baseline()
         build_t = baseline.build(data)
         LOG.info(f'Build time: {build_t}')
+        LOG.info(f'Running search')
         dists, nns, search_t = baseline.search(
             queries=queries,
             data=data,
             k=k
         )
+        LOG.info(f'Finished search')
         identifier = 'li-baseline'
-    elif index_type == 'learned-index':
-        li = LearnedIndex()
-        build_t = li.build(data, n_categories=n_categories)
-        LOG.info(f'Build time: {build_t}')
-        if type(n_buckets) != list:
-            n_buckets = [n_buckets]
-        for b in n_buckets:
-            dists, nns, search_t = li.search(
-                queries=queries,
-                data=data,
-                k=k,
-                n_buckets=b
-            )
-            identifier = f'li-index-{b}'
         LOG.info(f'dists={dists.shape}, nns={nns.shape} search time: {search_t}')
 
         store_results(
@@ -106,8 +97,43 @@ def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_c
             identifier,
             size
         )
+
+    elif index_type == 'learned-index':
+        li = LearnedIndex()
+        build_t = li.build(data, n_categories=n_categories)
+        LOG.info(f'Build time: {build_t}')
+        if type(n_buckets) != list:
+            n_buckets = [n_buckets]
+        for b in n_buckets:
+            dists, nns, search_t = li.search(
+                queries=queries,
+                data=data,
+                k=k,
+                n_buckets=b
+            )
+            identifier = f'li-index-{b}'
     else:
         raise Exception(f'Unknown index type: {index_type}')
+
+    LOG.info(f'dists={dists.shape}, nns={nns.shape} search time: {search_t}')
+
+    store_results(
+        os.path.join(
+            "result/",
+            kind,
+            size,
+            f"{identifier}.h5"
+        ),
+        identifier.capitalize(),
+        kind,
+        dists,
+        nns,
+        build_t,
+        search_t,
+        identifier,
+        size
+    )
+
 
 
 if __name__ == "__main__":
@@ -144,13 +170,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
-
+    """
     run(
         "pca32v2",
         "pca32",
         args.size,
         args.k,
         'learned-index',
+        args.n_buckets,
+        args.n_categories
+    )
+    """
+
+    run(
+        "pca96v2",
+        "emb",
+        args.size,
+        args.k,
+        'baseline',
         args.n_buckets,
         args.n_categories
     )

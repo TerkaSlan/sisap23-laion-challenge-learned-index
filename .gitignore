@@ -11,3 +11,5 @@ eval/*
 *.o*
 *.log
 **/job-logs/*
+models/
+10M-pca32-messif.txt
