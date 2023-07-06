@@ -132,6 +132,7 @@ def run(
             n_buckets=n_buckets,
             k=k
         )
+        LOG.info(f'Search time: {search_t}')
         identifier = 'learned-index'
         store_results(
             os.path.join(
