@@ -1,7 +1,9 @@
 import argparse
 import h5py
 import numpy as np
+import pandas as pd
 import os
+import time
 from pathlib import Path
 from urllib.request import urlretrieve
 import logging
@@ -50,7 +52,17 @@ def store_results(dst, algo, kind, dists, anns, buildtime, querytime, params, si
     f.close()
 
 
-def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_categories=None):
+def run(
+    kind,
+    key,
+    size='100K',
+    k=10,
+    index_type='baseline',
+    n_buckets=None,
+    n_categories=None,
+    epochs=100,
+    lr=0.1
+):
     LOG.info(
         f'Running with: kind={kind}, key={key}, size={size}'
         f'n_buckets={n_buckets}, n_categories={n_categories}'
@@ -75,21 +87,52 @@ def run(kind, key, size="100K", k=10, index_type='baseline', n_buckets=None, n_c
         )
         identifier = 'li-baseline'
     elif index_type == 'learned-index':
-        li = LearnedIndex()
-        build_t = li.build(data, n_categories=n_categories)
-        LOG.info(f'Build time: {build_t}')
-        if type(n_buckets) != list:
-            n_buckets = [n_buckets]
-        for b in n_buckets:
-            dists, nns, search_t = li.search(
-                queries=queries,
-                data=data,
-                k=k,
-                n_buckets=b
-            )
-            identifier = f'li-index-{b}'
-        LOG.info(f'dists={dists.shape}, nns={nns.shape} search time: {search_t}')
+        s = time.time()
+        # ---- data to pd.DataFrame ---- #
+        data = pd.DataFrame(data)
+        data.index += 1
 
+        kind_search = 'clip768v2'
+        key_search = 'emb'
+        if kind != kind_search:
+            LOG.info('Loading data to be used in search')
+            prepare(kind_search, size)
+            data_search = np.array(
+                h5py.File(os.path.join("data", kind_search, size, "dataset.h5"), "r")[key_search]
+            )
+            # ---- data_search to pd.DataFrame ---- #
+            data_search = pd.DataFrame(data_search)
+            data_search.index += 1
+            queries_search = np.array(
+                h5py.File(os.path.join("data", kind_search, size, "query.h5"), "r")[key_search]
+            )
+            n, d = data_search.shape
+            LOG.info(f'Loaded downloaded data, shape: n={n}, d={d}')
+            LOG.info(f'Loaded downloaded queries, shape: queries={queries_search.shape}')
+
+        # ---- instantiate the index ---- #
+        li = LearnedIndex()
+        # ---- build the index ---- #
+        pred_categories, build_t = li.build(
+            data,
+            n_categories=n_categories,
+            epochs=epochs,
+            lr=lr
+        )
+        e = time.time()
+        LOG.info(f'Pure build time: {build_t}')
+        LOG.info(f'Overall build time: {e-s}')
+
+        dists, nns, search_t = li.search(
+            data_navigation=data,
+            queries_navigation=queries,
+            data_search=data_search,
+            queries_search=queries_search,
+            pred_categories=pred_categories,
+            n_buckets=n_buckets,
+            k=k
+        )
+        identifier = 'learned-index'
         store_results(
             os.path.join(
                 "result/",
@@ -114,6 +157,14 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--dataset",
+        default="pca32v2"
+    )
+    parser.add_argument(
+        "--emb",
+        default="pca32"
+    )
+    parser.add_argument(
         "--size",
         default="100K"
     )
@@ -121,36 +172,38 @@ if __name__ == "__main__":
         "--k",
         default=10,
     )
-    """
-    parser.add_argument(
-        "--n-buckets",
-        default=1,
-        type=int
-    )
-    """
-    parser.add_argument(
-        '-b',
-        '--n-buckets',
-        nargs='+',
-        default=[5, 10, 15, 20, 30, 50, 100, 200, 300, 500, 1000]
-    )
-
     parser.add_argument(
         "--n-categories",
         default=100,
         type=int
     )
-
+    parser.add_argument(
+        "--epochs",
+        default=50,
+        type=int
+    )
+    parser.add_argument(
+        "--lr",
+        default=0.1,
+        type=int
+    )
+    parser.add_argument(
+        "--n-buckets",
+        default=10,
+        type=int
+    )
     args = parser.parse_args()
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
 
     run(
-        "pca32v2",
-        "pca32",
+        args.dataset,
+        args.emb,
         args.size,
         args.k,
         'learned-index',
         args.n_buckets,
-        args.n_categories
+        args.n_categories,
+        args.epochs,
+        args.lr
     )

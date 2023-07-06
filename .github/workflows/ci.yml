@@ -44,7 +44,7 @@ jobs:
         run: |
           conda create -n env python=3.8
           conda activate env
-          conda install matplotlib pandas scikit-learn
+          conda install matplotlib pandas scikit-learn faiss torch
           pip install h5py flake8 setuptools tqdm
       - name: Run benchmark
         shell: bash -el {0}
