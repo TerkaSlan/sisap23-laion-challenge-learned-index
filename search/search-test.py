@@ -2,18 +2,18 @@ import argparse
 import h5py
 import numpy as np
 import pandas as pd
+import pickle
 from sklearn import preprocessing
 import os
 import time
 from pathlib import Path
 from urllib.request import urlretrieve
 import logging
+from li.model import data_X_to_torch
 from li.Baseline import Baseline
 from li.LearnedIndex import LearnedIndex
 from li.utils import save_as_pickle
-from li.model import data_X_to_torch
 
-np.random.seed(2023)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,20 +63,16 @@ def run(
     k=10,
     index_type='baseline',
     n_buckets=None,
-    n_buckets_perc=None,
     n_categories=None,
     epochs=100,
-    model_type='MLP',
     lr=0.1,
     preprocess=False,
     save=False
 ):
-    n_buckets_perc = [int((b/100)*n_categories) for b in n_buckets_perc]
-    n_buckets_perc = list(set([b for b in n_buckets_perc if b > 0]))
     LOG.info(
         f'Running with: kind={kind}, key={key}, size={size},'
-        f' n_buckets_perc={n_buckets_perc}, n_categories={n_categories},'
-        f' epochs={epochs}, lr={lr}, model_type={model_type},'
+        f' n_buckets={n_buckets}, n_categories={n_categories},'
+        f' epochs={epochs}, lr={lr},'
         f' preprocess={preprocess}, save={save}'
     )
 
@@ -96,7 +92,7 @@ def run(
         baseline = Baseline()
         build_t = baseline.build(data)
         LOG.info(f'Build time: {build_t}')
-        dists, nns, search_t, inference_t, search_single_t, seq_search_t = baseline.search(
+        dists, nns, search_t = baseline.search(
             queries=queries,
             data=data,
             k=k
@@ -131,6 +127,8 @@ def run(
         # ---- instantiate the index ---- #
         li = LearnedIndex()
         # ---- build the index ---- #
+        build_t = 14400 # cca 4hrs
+        """
         pred_categories, build_t = li.build(
             data,
             n_categories=n_categories,
@@ -142,63 +140,63 @@ def run(
         LOG.info(f'Overall build time: {e-s}')
 
         if save:
-            save_filename = f'./models/{kind}-{size}-ep={epochs}-lr={lr}-cat={n_categories}-model={model_type}-prep={preprocess}-{os.environ["PBS_JOBID"]}'
-            LOG.info(f'Saving as {save_filename}')
-            save_as_pickle(f'{save_filename}.pkl', li)
+            save_dir = f'./models/{kind}-{key}-{size}-{epochs}-{lr}-{n_categories}-{os.environ["PBS_JOBID"]}'
+            LOG.info(f'Saving into {save_dir}')
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+            save_as_pickle(f'{save_dir}.pkl', li)
+        """
+        LOG.info('Loading the model')
+        def load_pickle(path):
+            with open(path, 'rb') as f:
+                return pickle.load(f)
+        li.model = load_pickle('/storage/brno12-cerit/home/tslaninakova/sisap-challenge/models/base-pca32-10M.pkl.pkl')
+        LOG.info('Collecting predictions')
+        pred_categories = li.model.predict(data_X_to_torch(data))
+        LOG.info('Running search')
 
-        for bucket in n_buckets_perc:
-            LOG.info(f'Searching with {bucket} buckets')
-            if bucket > 1:
-                dists, nns, search_t, inference_t, search_single_t, seq_search_t, sort_t = li.search(
-                    data_navigation=data,
-                    queries_navigation=queries,
-                    data_search=data_search,
-                    queries_search=queries_search,
-                    pred_categories=pred_categories,
-                    n_buckets=bucket,
-                    k=k
-                )
-                LOG.info('Inference time: %s', inference_t)
-                LOG.info('Search time: %s', search_t)
-                LOG.info('Search single time: %s', search_single_t)
-                LOG.info('Sequential search time: %s', seq_search_t)
-                LOG.info('Sort time: %s', sort_t)
-            else:
-                s = time.time()
-                _, pred_proba_categories = li.model.predict_proba(
-                    data_X_to_torch(queries)
-                )
-                data['category'] = pred_categories
-                dists, nns, t_all, t_pairwise, t_sort = li.search_single(
-                    data_navigation=data,
-                    data_search=data_search,
-                    queries_search=queries_search,
-                    pred_categories=pred_proba_categories[:, 0],
-                    k=k
-                )
-                search_t = time.time() - s
-                LOG.info(f't_all: {t_all}')
-                LOG.info(f't_pairwise: {t_pairwise}')
-                LOG.info(f't_sort: {t_sort}')
-
-            short_identifier = 'learned-index'
-            identifier = f'{short_identifier}-{kind}-{size}-ep={epochs}-lr={lr}-cat={n_categories}-model={model_type}-buck={bucket}-{os.environ["PBS_JOBID"]}'
-            store_results(
-                os.path.join(
-                    "result/",
-                    kind,
-                    size,
-                    f"{identifier}.h5"
-                ),
-                short_identifier.capitalize(),
-                kind,
-                dists,
-                nns,
-                build_t,
-                search_t,
-                identifier,
-                size
+        if n_buckets > 1:
+            dists, nns, search_t = li.search(
+                data_navigation=data,
+                queries_navigation=queries,
+                data_search=data_search,
+                queries_search=queries_search,
+                pred_categories=pred_categories,
+                n_buckets=n_buckets,
+                k=k
             )
+        else:
+            s = time.time()
+            _, pred_proba_categories = li.model.predict_proba(
+                data_X_to_torch(queries)
+            )
+            data['category'] = pred_categories
+            dists, nns = li.search_single(
+                data_navigation=data,
+                data_search=data_search,
+                queries_search=queries_search,
+                pred_categories=pred_proba_categories[:, 0],
+                k=k
+            )
+            search_t = time.time() - s
+
+        short_identifier = 'learned-index'
+        identifier = f'{short_identifier}-{kind}-{key}-{size}-{epochs}-{lr}-{n_categories}-{os.environ["PBS_JOBID"]}'
+        store_results(
+            os.path.join(
+                "result/",
+                kind,
+                size,
+                f"{identifier}.h5"
+            ),
+            short_identifier.capitalize(),
+            kind,
+            dists,
+            nns,
+            build_t,
+            search_t,
+            identifier,
+            size
+        )
     else:
         raise Exception(f'Unknown index type: {index_type}')
 
@@ -233,26 +231,14 @@ if __name__ == "__main__":
         type=int
     )
     parser.add_argument(
-        "--model-type",
-        default='MLP',
-        type=str
-    )
-    parser.add_argument(
         "--lr",
         default=0.1,
         type=float
     )
     parser.add_argument(
-        '-b',
-        '--n-buckets',
-        nargs='+',
-        default=[2, 3, 4] #, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30]
-    )
-    parser.add_argument(
-        '-bp',
-        '--buckets-perc',
-        nargs='+',
-        default=[1, 3, 5, 10, 20] #, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30]
+        "--n-buckets",
+        default=10,
+        type=int
     )
     parser.add_argument(
         "--preprocess",
@@ -274,11 +260,9 @@ if __name__ == "__main__":
         args.size,
         args.k,
         'learned-index',
-        [int(b) for b in args.n_buckets],
-        [int(b) for b in args.buckets_perc],
+        args.n_buckets,
         args.n_categories,
         args.epochs,
-        args.model_type,
         args.lr,
         args.preprocess,
         args.save

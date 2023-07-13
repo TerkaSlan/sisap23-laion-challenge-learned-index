@@ -6,6 +6,8 @@ from li.Logger import Logger
 from typing import Tuple
 import torch.utils.data
 
+torch.manual_seed(2023)
+np.random.seed(2023)
 
 class Model(nn.Module):
     def __init__(self, input_dim=768, output_dim=1000, model_type=None):
@@ -16,13 +18,57 @@ class Model(nn.Module):
                 torch.nn.ReLU(),
                 torch.nn.Linear(128, output_dim)
             )
-        if model_type == 'Bigger':
+        if model_type == 'MLP-2':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 64),
+                torch.nn.ReLU(),
+                torch.nn.Linear(64, output_dim)
+            )
+        if model_type == 'MLP-3':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 256),
+                torch.nn.ReLU(),
+                torch.nn.Linear(256, output_dim)
+            )
+        if model_type == 'MLP-4':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 512),
+                torch.nn.ReLU(),
+                torch.nn.Linear(512, output_dim)
+            )
+        if model_type == 'MLP-5':
             self.layers = torch.nn.Sequential(
                 torch.nn.Linear(input_dim, 256),
                 torch.nn.ReLU(),
                 torch.nn.Linear(256, 128),
                 torch.nn.ReLU(),
                 torch.nn.Linear(128, output_dim)
+            )
+        if model_type == 'MLP-6':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 32),
+                torch.nn.ReLU(),
+                torch.nn.Linear(32, output_dim)
+            )
+        if model_type == 'MLP-7':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 16),
+                torch.nn.ReLU(),
+                torch.nn.Linear(16, output_dim)
+            )
+        if model_type == 'MLP-8':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 8),
+                torch.nn.ReLU(),
+                torch.nn.Linear(8, output_dim)
+            )
+        if model_type == 'MLP-9':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 8),
+                torch.nn.ReLU(),
+                torch.nn.Linear(input_dim, 16),
+                torch.nn.ReLU(),
+                torch.nn.Linear(16, output_dim)
             )
         self.n_output_neurons = output_dim
 

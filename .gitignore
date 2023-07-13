@@ -11,3 +11,10 @@ eval/*
 *.o*
 *.log
 **/job-logs/*
+10M-old/
+models-old
+models/
+
+search/*.e*
+search/*.o*
+search/*.log

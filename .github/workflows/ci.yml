@@ -47,7 +47,7 @@ jobs:
           conda install matplotlib pandas scikit-learn
           pip install h5py flake8 setuptools tqdm faiss-cpu
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - name: Run benchmark
+      - name: Run learned index
         shell: bash -el {0}
         run: |
           conda activate env

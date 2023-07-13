@@ -6,7 +6,11 @@ import torch
 import torch.utils.data
 from li.model import NeuralNetwork, data_X_to_torch, LIDataset
 import faiss
+from tqdm import tqdm
+import numpy as np
 
+torch.manual_seed(2023)
+np.random.seed(2023)
 
 class LearnedIndex(Logger):
 
@@ -51,19 +55,26 @@ class LearnedIndex(Logger):
         _, pred_proba_categories = self.model.predict_proba(
             data_X_to_torch(queries_navigation)
         )
+        t_inference = time.time() - s
         anns_final = None
         dists_final = None
         # sorts the predictions of a bucket for each query, ordered by lowest probability
         data_navigation['category'] = pred_categories
 
         # iterates over the predicted buckets starting from the most similar (index -1)
+        t_all_buckets = 0
+        t_all_pairwise = 0
+        t_all_sort = 0
         for bucket in range(n_buckets):
-            dists, anns = self.search_single(
+            dists, anns, t_all, t_pairwise, t_sort = self.search_single(
                 data_navigation,
                 data_search,
                 queries_search,
                 pred_proba_categories[:, bucket]
             )
+            t_all_buckets += t_all
+            t_all_pairwise += t_pairwise
+            t_all_sort += t_sort
             if anns_final is None:
                 anns_final = anns
                 dists_final = dists
@@ -83,7 +94,7 @@ class LearnedIndex(Logger):
 
                 assert anns_final.shape == dists_final.shape == (queries_search.shape[0], k)
 
-        return dists_final, anns_final, time.time() - s
+        return dists_final, anns_final, time.time() - s, t_inference, t_all_buckets, t_all_pairwise, t_all_sort
 
     def search_single(
         self,
@@ -91,7 +102,8 @@ class LearnedIndex(Logger):
         data_search,
         queries_search,
         pred_categories,
-        k=10
+        k=10,
+        threshold_dist=None
     ):
         """ Search for k nearest neighbors for each query in queries.
 
@@ -113,22 +125,49 @@ class LearnedIndex(Logger):
         time : float
             Time it took to search.
         """
+        s_all = time.time()
         nns = np.zeros((queries_search.shape[0], k), dtype=np.uint32)
         dists = np.zeros((queries_search.shape[0], k), dtype=np.float32)
 
-        for cat in np.unique(pred_categories):
+        if 'category' in data_search.columns:
+            data_search = data_search.drop('category', axis=1, errors='ignore')
+
+        t_pairwise = 0
+        t_sort = 0
+        for cat, g in tqdm(data_navigation.groupby('category')):
             cat_idxs = np.where(pred_categories == cat)[0]
-            bucket_obj_indexes = data_navigation.query('category == @cat').index
-            seq_search_dists = pairwise_cosine(
-                queries_search[cat_idxs], data_search.loc[bucket_obj_indexes]
-            )
-            ann_relative = seq_search_dists.argsort()[:, :k]
-            nns[cat_idxs] = np.array(bucket_obj_indexes)[ann_relative]
-            dists[cat_idxs] = np.take_along_axis(seq_search_dists, ann_relative, axis=1)
+            bucket_obj_indexes = g.index
+            if bucket_obj_indexes.shape[0] != 0 and cat_idxs.shape[0] != 0:
+                s = time.time()
+                # TODO: Add filter, filter will be different for every query
+                # OR pass nns, dists from previous buckets
+                seq_search_dists = pairwise_cosine(
+                    queries_search[cat_idxs],
+                    data_search.loc[bucket_obj_indexes]
+                )
+                t_pairwise += time.time() - s
+                s = time.time()
+                ann_relative = seq_search_dists.argsort(kind='quicksort')[
+                    :, :k if k < seq_search_dists.shape[1] else seq_search_dists.shape[1]
+                ]
+                t_sort += time.time() - s
+                if bucket_obj_indexes.shape[0] < k:
+                    # pad to `k` if needed
+                    pad_needed = (k - bucket_obj_indexes.shape[0]) // 2 + 1
+                    bucket_obj_indexes = np.pad(np.array(bucket_obj_indexes), pad_needed, 'edge')[:k]
+                    ann_relative = np.pad(ann_relative[0], pad_needed, 'edge')[:k].reshape(1, -1)
+                    seq_search_dists = np.pad(seq_search_dists[0], pad_needed, 'edge')[:k].reshape(1, -1)
+                    _, i = np.unique(seq_search_dists, return_index=True)
+                    duplicates_i = np.setdiff1d(np.arange(k), i)
+                    # assign a large number such that the duplicated value gets replaced
+                    seq_search_dists[0][duplicates_i] = 10_000
 
-        return dists, nns
+                nns[cat_idxs] = np.array(bucket_obj_indexes)[ann_relative]
+                dists[cat_idxs] = np.take_along_axis(seq_search_dists, ann_relative, axis=1)
+        t_all = time.time() - s_all
+        return dists, nns, t_all, t_pairwise, t_sort
 
-    def build(self, data, n_categories=100, epochs=100, lr=0.1):
+    def build(self, data, n_categories=100, epochs=100, lr=0.1, model_type='MLP'):
         """ Build the index.
 
         Parameters
@@ -158,14 +197,22 @@ class LearnedIndex(Logger):
             input_dim=data.shape[1],
             output_dim=n_categories,
             lr=lr,
-            model_type='MLP'
+            model_type=model_type
         )
         nn.train_batch(train_loader, epochs=epochs, logger=self.logger)
         # ---- collect predictions ---- #
         self.model = nn
         return nn.predict(data_X_to_torch(data)), time.time() - s
 
-    def cluster(self, data, n_clusters):
+    def cluster(
+        self,
+        data,
+        n_clusters,
+        n_redo=10,
+        spherical=True,
+        int_centroids=True,
+
+    ):
         if data.shape[0] < 2:
             return None, np.zeros_like(data.shape[0])
 
@@ -174,7 +221,16 @@ class LearnedIndex(Logger):
             if n_clusters < 2:
                 n_clusters = 2
 
-        kmeans = faiss.Kmeans(d=np.array(data).shape[1], k=n_clusters)
+        kmeans = faiss.Kmeans(
+            d=np.array(data).shape[1],
+            k=n_clusters,
+            verbose=True,
+            #nredo=n_redo,
+            #spherical=spherical,
+            #int_centroids=int_centroids,
+            #update_index=False,
+            seed=2023
+        )
         X = np.array(data).astype(np.float32)
         kmeans.train(X)
 
