@@ -62,7 +62,6 @@ def run(
     size='100K',
     k=10,
     index_type='baseline',
-    n_buckets=None,
     n_buckets_perc=None,
     n_categories=None,
     epochs=100,
@@ -149,19 +148,21 @@ def run(
         for bucket in n_buckets_perc:
             LOG.info(f'Searching with {bucket} buckets')
             if bucket > 1:
-                dists, nns, search_t, inference_t, search_single_t, seq_search_t, sort_t = li.search(
+                dists, nns, search_t, inference_t, search_single_t, seq_search_t, pure_seq_search_t, sort_t = li.search(
                     data_navigation=data,
                     queries_navigation=queries,
                     data_search=data_search,
                     queries_search=queries_search,
                     pred_categories=pred_categories,
                     n_buckets=bucket,
-                    k=k
+                    k=k,
+                    use_threshold=True
                 )
                 LOG.info('Inference time: %s', inference_t)
                 LOG.info('Search time: %s', search_t)
                 LOG.info('Search single time: %s', search_single_t)
                 LOG.info('Sequential search time: %s', seq_search_t)
+                LOG.info('Pure sequential search time: %s', pure_seq_search_t)
                 LOG.info('Sort time: %s', sort_t)
             else:
                 s = time.time()
@@ -169,7 +170,7 @@ def run(
                     data_X_to_torch(queries)
                 )
                 data['category'] = pred_categories
-                dists, nns, t_all, t_pairwise, t_sort = li.search_single(
+                dists, nns, t_all, t_pairwise, t_pure_pairwise, t_sort = li.search_single(
                     data_navigation=data,
                     data_search=data_search,
                     queries_search=queries_search,
@@ -179,6 +180,7 @@ def run(
                 search_t = time.time() - s
                 LOG.info(f't_all: {t_all}')
                 LOG.info(f't_pairwise: {t_pairwise}')
+                LOG.info(f't_pure_pairwise: {t_pure_pairwise}')
                 LOG.info(f't_sort: {t_sort}')
 
             short_identifier = 'learned-index'
@@ -224,7 +226,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--n-categories",
-        default=100,
+        default=200,
         type=int
     )
     parser.add_argument(
@@ -261,7 +263,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--save",
-        default=False,
+        default=True,
         type=bool
     )
     args = parser.parse_args()
@@ -274,7 +276,6 @@ if __name__ == "__main__":
         args.size,
         args.k,
         'learned-index',
-        [int(b) for b in args.n_buckets],
         [int(b) for b in args.buckets_perc],
         args.n_categories,
         args.epochs,

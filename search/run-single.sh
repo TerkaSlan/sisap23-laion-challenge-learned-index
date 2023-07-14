@@ -8,4 +8,3 @@ python3 search/search.py \
 --dataset=$DATASET --emb=$EMB --size=$SIZE \
 --n-categories=$N_CATEGORIES --epochs=$EPOCHS --model-type=$MODEL_TYPE \
 --preprocess=$PREPROCESS --lr=$LR --save=True 2>&1 | tee -a $PBS_JOBID.log
-python3 eval/eval.py

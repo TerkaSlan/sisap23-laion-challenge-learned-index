@@ -16,7 +16,7 @@ do
         do
             for MODEL_TYPE in MLP MLP-2 MLP-3 MLP-6 #MLP-8 MLP-4 MLP-5 MLP-7 #MLP-7 MLP-3 MLP #MLP MLP-6 MLP-8 #MLP MLP-2 MLP-3 MLP-4 MLP-6
             do
-                for EPOCHS in 40 100 200 #20 30 40 50 60 #80 100 120 #25 26 27 28 29 #30 31 32 33 #10 15 20 25 30 35 #50 100 200
+                for EPOCHS in 1 #40 100 200 #20 30 40 50 60 #80 100 120 #25 26 27 28 29 #30 31 32 33 #10 15 20 25 30 35 #50 100 200
                 do
                     for N_CATEGORIES in 120 200 300 500 1000 #200 #45 46 47 48 49 #50 51 52 #10 15 20 30 35 40 45 #50 55 #100 150 200
                     do

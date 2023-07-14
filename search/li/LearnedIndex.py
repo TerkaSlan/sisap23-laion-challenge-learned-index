@@ -1,6 +1,6 @@
 import numpy as np
 from li.Logger import Logger
-from li.utils import pairwise_cosine
+from li.utils import pairwise_cosine, pairwise_cosine_threshold
 import time
 import torch
 import torch.utils.data
@@ -26,7 +26,8 @@ class LearnedIndex(Logger):
         queries_search,
         pred_categories,
         n_buckets=1,
-        k=10
+        k=10,
+        use_threshold=False
     ):
         """ Search for k nearest neighbors for each query in queries.
 
@@ -65,15 +66,25 @@ class LearnedIndex(Logger):
         t_all_buckets = 0
         t_all_pairwise = 0
         t_all_sort = 0
+        t_all_pure_pairwise = 0
+        t_comp_threshold = 0
         for bucket in range(n_buckets):
-            dists, anns, t_all, t_pairwise, t_sort = self.search_single(
+            if bucket != 0 and use_threshold:
+                s_ = time.time()
+                threshold_dist = dists_final.max(axis=1)
+                t_comp_threshold += time.time() - s_
+            else:
+                threshold_dist = None
+            dists, anns, t_all, t_pairwise, t_pure_pairwise, t_sort = self.search_single(
                 data_navigation,
                 data_search,
                 queries_search,
-                pred_proba_categories[:, bucket]
+                pred_proba_categories[:, bucket],
+                threshold_dist=threshold_dist
             )
             t_all_buckets += t_all
             t_all_pairwise += t_pairwise
+            t_all_pure_pairwise += t_pure_pairwise
             t_all_sort += t_sort
             if anns_final is None:
                 anns_final = anns
@@ -94,7 +105,8 @@ class LearnedIndex(Logger):
 
                 assert anns_final.shape == dists_final.shape == (queries_search.shape[0], k)
 
-        return dists_final, anns_final, time.time() - s, t_inference, t_all_buckets, t_all_pairwise, t_all_sort
+        self.logger.info(f't_comp_threshold: {t_comp_threshold}')
+        return dists_final, anns_final, time.time() - s, t_inference, t_all_buckets, t_all_pairwise, t_all_pure_pairwise, t_all_sort
 
     def search_single(
         self,
@@ -133,6 +145,7 @@ class LearnedIndex(Logger):
             data_search = data_search.drop('category', axis=1, errors='ignore')
 
         t_pairwise = 0
+        t_pure_pairwise = 0
         t_sort = 0
         for cat, g in tqdm(data_navigation.groupby('category')):
             cat_idxs = np.where(pred_categories == cat)[0]
@@ -141,10 +154,30 @@ class LearnedIndex(Logger):
                 s = time.time()
                 # TODO: Add filter, filter will be different for every query
                 # OR pass nns, dists from previous buckets
-                seq_search_dists = pairwise_cosine(
-                    queries_search[cat_idxs],
-                    data_search.loc[bucket_obj_indexes]
-                )
+                if threshold_dist is not None:
+                    seq_search_dists = pairwise_cosine_threshold(
+                        queries_search[cat_idxs],
+                        data_search.loc[bucket_obj_indexes],
+                        threshold_dist,
+                        cat_idxs,
+                        k
+                    )
+                    if seq_search_dists[0] is None:
+                        t_pure_pairwise += seq_search_dists[1]
+                        # There is no distance below the threshold, we can continue
+                        continue
+                    else:
+                        # seq_search_dists[1] contains the indexes of the relevant objects
+                        bucket_obj_indexes = bucket_obj_indexes[seq_search_dists[1]]
+                        t_pure_pairwise += seq_search_dists[2]
+                        seq_search_dists = seq_search_dists[0]
+                else:
+                    s_ = time.time()
+                    seq_search_dists = pairwise_cosine(
+                        queries_search[cat_idxs],
+                        data_search.loc[bucket_obj_indexes]
+                    )
+                    t_pure_pairwise += time.time() - s_
                 t_pairwise += time.time() - s
                 s = time.time()
                 ann_relative = seq_search_dists.argsort(kind='quicksort')[
@@ -165,7 +198,7 @@ class LearnedIndex(Logger):
                 nns[cat_idxs] = np.array(bucket_obj_indexes)[ann_relative]
                 dists[cat_idxs] = np.take_along_axis(seq_search_dists, ann_relative, axis=1)
         t_all = time.time() - s_all
-        return dists, nns, t_all, t_pairwise, t_sort
+        return dists, nns, t_all, t_pairwise, t_pure_pairwise, t_sort
 
     def build(self, data, n_categories=100, epochs=100, lr=0.1, model_type='MLP'):
         """ Build the index.
