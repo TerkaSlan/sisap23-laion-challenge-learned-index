@@ -5,8 +5,7 @@ import time
 from sklearn.metrics import accuracy_score
 import gc
 from sklearn.metrics.pairwise import cosine_similarity
-from li.model import get_device, Model, data_to_torch, train, \
-    predict, data_X_to_torch, predict_proba
+from li.model import get_device, Model, data_to_torch, data_X_to_torch, predict_proba, ModelBigger
 import torch
 
 
@@ -126,7 +125,7 @@ class LearnedIndex(Logger):
 
         return dists, nns
 
-    def build(self, f):
+    def build(self, f, n_epochs=1000, lr=0.01, model_size=None):
         """ Build the index.
 
         Parameters
@@ -149,7 +148,9 @@ class LearnedIndex(Logger):
         self.logger.info(
             'Training the index model.'
         )
-        train_predictions, model = self.train_index(train_data, train_labels)
+        train_predictions, model = self.train_index(
+            train_data, train_labels, epochs=n_epochs, model_size=model_size
+        )
         self.logger.info(
             'Trained the index model, collected train preds.'
         )
@@ -266,7 +267,7 @@ class LearnedIndex(Logger):
 
         return training_data, labels, training_indexes_all
 
-    def train_index(self, data, labels, epochs=100):
+    def train_index(self, data, labels, epochs=100, lr=0.01, model_size=None):
         """ Train the index.
 
         Parameters
@@ -281,8 +282,10 @@ class LearnedIndex(Logger):
         model : sklearn.linear_model.LogisticRegression
             Trained model.
         """
-        model = Model(input_dim=self.dataset_dim, output_dim=self.n_categories)
-        lr = 0.01
+        if model_size is None:
+            model = Model(input_dim=self.dataset_dim, output_dim=self.n_categories)
+        else:
+            model = ModelBigger(input_dim=self.dataset_dim, output_dim=self.n_categories)
         loss = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         device = get_device()
