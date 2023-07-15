@@ -3,7 +3,7 @@ data
 *.png
 result
 **/*/.ipynb_checkpoints
-.ipynb_checkpoints/
+.ipynb_checkpoints/*
 */*.egg-info
 **/*/__pycache__
 eval/*
@@ -11,5 +11,10 @@ eval/*
 *.o*
 *.log
 **/job-logs/*
+10M-old/
+models-old
 models/
-10M-pca32-messif.txt
+
+search/*.e*
+search/*.o*
+search/*.log

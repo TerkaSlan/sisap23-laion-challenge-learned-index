@@ -1,11 +1,16 @@
 import numpy as np
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
 from li.Logger import Logger
-from li.utils import pairwise_cosine
+from li.utils import pairwise_cosine, pairwise_cosine_threshold
 import time
-from sklearn.metrics import accuracy_score
+import torch
+import torch.utils.data
+from li.model import NeuralNetwork, data_X_to_torch, LIDataset
+import faiss
+from tqdm import tqdm
+import numpy as np
 
+torch.manual_seed(2023)
+np.random.seed(2023)
 
 class LearnedIndex(Logger):
 
@@ -13,7 +18,17 @@ class LearnedIndex(Logger):
         self.pq = []
         self.model = None
 
-    def search(self, queries, data, n_buckets=2, k=10):
+    def search(
+        self,
+        data_navigation,
+        queries_navigation,
+        data_search,
+        queries_search,
+        pred_categories,
+        n_buckets=1,
+        k=10,
+        use_threshold=False
+    ):
         """ Search for k nearest neighbors for each query in queries.
 
         Parameters
@@ -38,26 +53,39 @@ class LearnedIndex(Logger):
         """
         assert self.model is not None, 'Model is not trained, call `build` first.'
         s = time.time()
-        data = pd.DataFrame(data)
-        # assigns each object to its bucket (category)
-        data_categories = pd.DataFrame(
-            self.model.predict(data),
-            index=data.index,
-            columns=['category']
+        _, pred_proba_categories = self.model.predict_proba(
+            data_X_to_torch(queries_navigation)
         )
+        t_inference = time.time() - s
         anns_final = None
         dists_final = None
         # sorts the predictions of a bucket for each query, ordered by lowest probability
-        predicted_categories = np.argsort(self.model.predict_proba(queries), axis=1)
+        data_navigation['category'] = pred_categories
 
         # iterates over the predicted buckets starting from the most similar (index -1)
+        t_all_buckets = 0
+        t_all_pairwise = 0
+        t_all_sort = 0
+        t_all_pure_pairwise = 0
+        t_comp_threshold = 0
         for bucket in range(n_buckets):
-            dists, anns = self.search_single(
-                queries,
-                data,
-                data_categories,
-                predicted_categories[:, -(bucket+1)]
+            if bucket != 0 and use_threshold:
+                s_ = time.time()
+                threshold_dist = dists_final.max(axis=1)
+                t_comp_threshold += time.time() - s_
+            else:
+                threshold_dist = None
+            dists, anns, t_all, t_pairwise, t_pure_pairwise, t_sort = self.search_single(
+                data_navigation,
+                data_search,
+                queries_search,
+                pred_proba_categories[:, bucket],
+                threshold_dist=threshold_dist
             )
+            t_all_buckets += t_all
+            t_all_pairwise += t_pairwise
+            t_all_pure_pairwise += t_pure_pairwise
+            t_all_sort += t_sort
             if anns_final is None:
                 anns_final = anns
                 dists_final = dists
@@ -75,11 +103,20 @@ class LearnedIndex(Logger):
                 dists_final = dists_final[tuple(idx)]
                 anns_final = anns_final[tuple(idx)]
 
-                assert anns_final.shape == dists_final.shape == (queries.shape[0], k)
+                assert anns_final.shape == dists_final.shape == (queries_search.shape[0], k)
 
-        return dists_final, anns_final, time.time() - s
+        self.logger.info(f't_comp_threshold: {t_comp_threshold}')
+        return dists_final, anns_final, time.time() - s, t_inference, t_all_buckets, t_all_pairwise, t_all_pure_pairwise, t_all_sort
 
-    def search_single(self, queries, data, data_categories, predicted_categories, k=10):
+    def search_single(
+        self,
+        data_navigation,
+        data_search,
+        queries_search,
+        pred_categories,
+        k=10,
+        threshold_dist=None
+    ):
         """ Search for k nearest neighbors for each query in queries.
 
         Parameters
@@ -100,19 +137,171 @@ class LearnedIndex(Logger):
         time : float
             Time it took to search.
         """
-        nns = np.zeros((queries.shape[0], k), dtype=np.uint32)
-        dists = np.zeros((queries.shape[0], k), dtype=np.float32)
-        for cat in np.unique(predicted_categories):
-            cat_idxs = np.where(predicted_categories == cat)[0]
-            bucket_obj_indexes = data_categories.query('category == @cat').index
-            seq_search_dists = pairwise_cosine(queries[cat_idxs], data.loc[bucket_obj_indexes])
-            ann_relative = seq_search_dists.argsort()[:, :k]
-            nns[cat_idxs] = np.array(bucket_obj_indexes)[ann_relative] + 1
-            dists[cat_idxs] = np.take_along_axis(seq_search_dists, ann_relative, axis=1)
+        s_all = time.time()
+        nns = np.zeros((queries_search.shape[0], k), dtype=np.uint32)
+        dists = np.full(shape=(queries_search.shape[0], k), fill_value=10_000, dtype=np.float)
 
-        return dists, nns
+        if 'category' in data_search.columns:
+            data_search = data_search.drop('category', axis=1, errors='ignore')
 
-    def build(self, data, n_categories=100):
+        t_pairwise = 0
+        t_pure_pairwise = 0
+        t_sort = 0
+        for cat, g in tqdm(data_navigation.groupby('category')):
+            cat_idxs = np.where(pred_categories == cat)[0]
+            bucket_obj_indexes = g.index
+            if bucket_obj_indexes.shape[0] != 0 and cat_idxs.shape[0] != 0:
+                s = time.time()
+                # TODO: Add filter, filter will be different for every query
+                # OR pass nns, dists from previous buckets
+                if threshold_dist is not None:
+                    seq_search_dists = pairwise_cosine_threshold(
+                        queries_search[cat_idxs],
+                        data_search.loc[bucket_obj_indexes],
+                        threshold_dist,
+                        cat_idxs,
+                        k
+                    )
+                    if seq_search_dists[0] is None:
+                        t_pure_pairwise += seq_search_dists[1]
+                        # There is no distance below the threshold, we can continue
+                        continue
+                    else:
+                        # seq_search_dists[1] contains the indexes of the relevant objects
+                        bucket_obj_indexes = bucket_obj_indexes[seq_search_dists[1]]
+                        t_pure_pairwise += seq_search_dists[2]
+                        seq_search_dists = seq_search_dists[0]
+                else:
+                    s_ = time.time()
+                    seq_search_dists = pairwise_cosine(
+                        queries_search[cat_idxs],
+                        data_search.loc[bucket_obj_indexes]
+                    )
+                    t_pure_pairwise += time.time() - s_
+                t_pairwise += time.time() - s
+                s = time.time()
+                ann_relative = seq_search_dists.argsort(kind='quicksort')[
+                    :, :k if k < seq_search_dists.shape[1] else seq_search_dists.shape[1]
+                ]
+                t_sort += time.time() - s
+                if bucket_obj_indexes.shape[0] < k:
+                    # pad to `k` if needed
+                    pad_needed = (k - bucket_obj_indexes.shape[0]) // 2 + 1
+                    bucket_obj_indexes = np.pad(np.array(bucket_obj_indexes), pad_needed, 'edge')[:k]
+                    ann_relative = np.pad(ann_relative[0], pad_needed, 'edge')[:k].reshape(1, -1)
+                    seq_search_dists = np.pad(seq_search_dists[0], pad_needed, 'edge')[:k].reshape(1, -1)
+                    _, i = np.unique(seq_search_dists, return_index=True)
+                    duplicates_i = np.setdiff1d(np.arange(k), i)
+                    # assign a large number such that the duplicated value gets replaced
+                    seq_search_dists[0][duplicates_i] = 10_000
+
+                nns[cat_idxs] = np.array(bucket_obj_indexes)[ann_relative]
+                dists[cat_idxs] = np.take_along_axis(seq_search_dists, ann_relative, axis=1)
+        t_all = time.time() - s_all
+        return dists, nns, t_all, t_pairwise, t_pure_pairwise, t_sort
+
+
+    def search_single_two_levels(
+        self,
+        data_navigation,
+        data_search,
+        queries_search,
+        queries_navigation,
+        pred_categories,
+        predict_categories_l2,
+        k=10,
+        threshold_dist=None
+    ):
+        """ Search for k nearest neighbors for each query in queries.
+
+        Parameters
+        ----------
+        queries : np.array
+            Queries to search for.
+        data : np.array
+            Data to search in.
+        k : int
+            Number of nearest neighbors to search for.
+
+        Returns
+        -------
+        anns : np.array
+            Array of shape (queries.shape[0], k) with nearest neighbors for each query.
+        final_dists_k : np.array
+            Array of shape (queries.shape[0], k) with distances to nearest neighbors for each query.
+        time : float
+            Time it took to search.
+        """
+        s_all = time.time()
+        nns = np.zeros((queries_search.shape[0], k), dtype=np.uint32)
+        dists = np.zeros((queries_search.shape[0], k), dtype=np.float32)
+
+        if 'category' in data_search.columns:
+            data_search = data_search.drop('category', axis=1, errors='ignore')
+
+        data_navigation['category_L2'] = predict_categories_l2
+        t_pairwise = 0
+        t_pure_pairwise = 0
+        t_sort = 0
+        for cat, g in tqdm(data_navigation.groupby(['category', 'category_L2'])):
+            cat_idxs = np.where(pred_categories[:, 0] == cat[0])[0]
+            _, pred_proba_categories_l2 = self.models[cat[0]].predict_proba(
+                data_X_to_torch(queries_navigation[cat_idxs])
+            )
+            cat_idxs2 = np.where(pred_proba_categories_l2[:, 0] == cat[1])[0]
+            bucket_obj_indexes = g.index
+            if bucket_obj_indexes.shape[0] != 0 and cat_idxs2.shape[0] != 0:
+                s = time.time()
+                # TODO: Add filter, filter will be different for every query
+                # OR pass nns, dists from previous buckets
+                if threshold_dist is not None:
+                    seq_search_dists = pairwise_cosine_threshold(
+                        queries_search[cat_idxs][cat_idxs2],
+                        data_search.loc[bucket_obj_indexes],
+                        threshold_dist,
+                        cat_idxs, # TODO: Change this
+                        k
+                    )
+                    if seq_search_dists[0] is None:
+                        t_pure_pairwise += seq_search_dists[1]
+                        # There is no distance below the threshold, we can continue
+                        continue
+                    else:
+                        # seq_search_dists[1] contains the indexes of the relevant objects
+                        bucket_obj_indexes = bucket_obj_indexes[seq_search_dists[1]]
+                        t_pure_pairwise += seq_search_dists[2]
+                        seq_search_dists = seq_search_dists[0]
+                else:
+                    s_ = time.time()
+                    seq_search_dists = pairwise_cosine(
+                        queries_search[cat_idxs][cat_idxs2],
+                        data_search.loc[bucket_obj_indexes]
+                    )
+                    t_pure_pairwise += time.time() - s_
+                t_pairwise += time.time() - s
+                s = time.time()
+                ann_relative = seq_search_dists.argsort(kind='quicksort')[
+                    :, :k if k < seq_search_dists.shape[1] else seq_search_dists.shape[1]
+                ]
+                t_sort += time.time() - s
+                if bucket_obj_indexes.shape[0] < k:
+                    # pad to `k` if needed
+                    pad_needed = (k - bucket_obj_indexes.shape[0]) // 2 + 1
+                    bucket_obj_indexes = np.pad(np.array(bucket_obj_indexes), pad_needed, 'edge')[:k]
+                    ann_relative = np.pad(ann_relative[0], pad_needed, 'edge')[:k].reshape(1, -1)
+                    seq_search_dists = np.pad(seq_search_dists[0], pad_needed, 'edge')[:k].reshape(1, -1)
+                    _, i = np.unique(seq_search_dists, return_index=True)
+                    duplicates_i = np.setdiff1d(np.arange(k), i)
+                    # assign a large number such that the duplicated value gets replaced
+                    seq_search_dists[0][duplicates_i] = 10_000
+
+                nns[cat_idxs][cat_idxs2] = np.array(bucket_obj_indexes)[ann_relative]
+                dists[cat_idxs][cat_idxs2] = np.take_along_axis(seq_search_dists, ann_relative, axis=1)
+        t_all = time.time() - s_all
+        return dists, nns, t_all, t_pairwise, t_pure_pairwise, t_sort
+
+
+    def build(self, data, n_categories=100, epochs=100, lr=0.1, model_type='MLP', n_levels=1):
         """ Build the index.
 
         Parameters
@@ -126,99 +315,94 @@ class LearnedIndex(Logger):
             Time it took to build the index.
         """
         s = time.time()
-        data = pd.DataFrame(data)
-        labels_df = self.get_train_labels(data, n_categories=n_categories)
-        time_labels = time.time() - s
-        s2 = time.time()
-        model = self.train_index(data, labels_df)
-        time_train = time.time() - s2
-        self.model = model
-        self.logger.info(
-            f'Collecting labels took: {time_labels}, training took: {time_train}.'
+        # ---- cluster the data into categories ---- #
+        _, labels = self.cluster(data, n_categories)
+
+        # ---- train a neural network ---- #
+        dataset = LIDataset(data, labels)
+        train_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=256,
+            sampler=torch.utils.data.SubsetRandomSampler(
+                data.index.values.tolist()
+            )
         )
-        return time.time() - s
-
-    def create_category(self, data, random_state_offset):
-        """ Create categories for multi-class classification.
-
-        Parameters
-        ----------
-        data : np.array
-            Data to create categories on.
-        random_state_offset : int
-            Random state offset to use.
-
-        Returns
-        -------
-        obj_id : int
-            Object id of the main object in the category.
-        cat : np.array
-            Array with object ids and distances to the main object.
-        """
-        main_datapoint = data.sample(1, random_state=2023+random_state_offset)
-        distances = pairwise_cosine(main_datapoint.values, data)
-        idxs = distances[0].argsort()[1:1001]
-        return (
-            main_datapoint.index[0],
-            np.vstack([idxs, distances[0][idxs]])
+        nn = NeuralNetwork(
+            input_dim=data.shape[1],
+            output_dim=n_categories,
+            lr=lr,
+            model_type=model_type
         )
+        nn.train_batch(train_loader, epochs=epochs, logger=self.logger)
+        # ---- collect predictions ---- #
+        if n_levels == 1:
+            self.model = nn
+            return nn.predict(data_X_to_torch(data)), time.time() - s
+        else:
+            predict_categories = nn.predict(data_X_to_torch(data))
+            # ---- train a neural network for each category ---- #
+            models = []
+            predict_categories_l2 = pd.DataFrame([])
+            for cat in range(n_categories):
+                cat_data = data.loc[labels == cat]
+                #cat_labels = predict_categories[labels == cat]
+                _, labels = self.cluster(cat_data, n_categories)
+                dataset = LIDataset(cat_data, labels)
+                train_loader = torch.utils.data.DataLoader(
+                    dataset,
+                    batch_size=256,
+                    sampler=torch.utils.data.SubsetRandomSampler(
+                        np.arange(cat_data.index.shape[0]) #cat_data.index.values.tolist()
+                    )
+                )
+                nn = NeuralNetwork(
+                    input_dim=data.shape[1],
+                    output_dim=1,
+                    lr=lr,
+                    model_type=model_type
+                )
+                nn.train_batch(train_loader, epochs=epochs, logger=self.logger)
+                models.append(nn)
+                pred_df = pd.DataFrame(
+                    nn.predict(data_X_to_torch(cat_data)),
+                    index=cat_data.index
+                )
+                predict_categories_l2 = pd.concat(
+                    [predict_categories_l2, pred_df],
+                    axis=1
+                )
+            self.models = models
+            return self.model.predict(data_X_to_torch(data)), predict_categories_l2, time.time() - s
 
-    def get_train_labels(self, data, n_categories=100):
-        """ Get labels for training.
 
-        Parameters
-        ----------
-        data : np.array
-            Data to get labels for.
-        n_categories : int
-            Number of categories to create.
+    def cluster(
+        self,
+        data,
+        n_clusters,
+        n_redo=10,
+        spherical=True,
+        int_centroids=True,
 
-        Returns
-        -------
-        df_all : pd.DataFrame
-            DataFrame with labels.
-        """
-        categories = []
-        main_objs = []
-        for i in range(n_categories):
-            obj_id, cat = self.create_category(data, random_state_offset=i)
-            main_objs.append(obj_id)
-            categories.append(cat)
+    ):
+        if data.shape[0] < 2:
+            return None, np.zeros_like(data.shape[0])
 
-        df_all = pd.DataFrame(np.empty(0, dtype=np.uint32))
-        for cat_id, c in enumerate(categories):
-            df_ = pd.DataFrame(c.T)
-            df_[2] = cat_id
-            df_all = pd.concat([df_all, df_])
+        if data.shape[0] < n_clusters:
+            n_clusters = data.shape[0] // 5
+            if n_clusters < 2:
+                n_clusters = 2
 
-        df_all = df_all.rename(
-            columns={
-                0: 'object_id', 1: 'dist', 2: 'category_id'
-            }
-        ).sort_values(
-            'dist', ascending=True
-        ).drop_duplicates(
-            'object_id', keep='first'
+        kmeans = faiss.Kmeans(
+            d=np.array(data).shape[1],
+            k=n_clusters,
+            verbose=True,
+            #nredo=n_redo,
+            #spherical=spherical,
+            #int_centroids=int_centroids,
+            #update_index=False,
+            seed=2023
         )
-        return df_all
+        X = np.array(data).astype(np.float32)
+        kmeans.train(X)
 
-    def train_index(self, data, labels_df):
-        """ Train the index.
-
-        Parameters
-        ----------
-        data : np.array
-            Data to train the index on.
-        labels_df : pd.DataFrame
-            DataFrame with labels.
-
-        Returns
-        -------
-        model : sklearn.linear_model.LogisticRegression
-            Trained model.
-        """
-        X = data.loc[labels_df.object_id.astype(int)]
-        y = labels_df.category_id.astype(int)
-        model = LogisticRegression(random_state=2023, max_iter=500).fit(X, y)
-        print(f'Accuracy on train data: {accuracy_score(model.predict(X), y)}')
-        return model
+        return kmeans, kmeans.index.search(X, 1)[1].T[0]

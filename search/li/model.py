@@ -1,50 +1,93 @@
 import torch
 from torch import nn
 import torch.nn.functional as nnf
-from dlmi.utils import get_device, reverse_dict
 import numpy as np
-from dlmi.Logger import Logger
-from typing import List, Tuple
-import torch
+from li.Logger import Logger
+from typing import Tuple
 import torch.utils.data
 
-
-class ModelBigger(nn.Module):
-    def __init__(self, input_dim=768, output_dim=1000):
-        super().__init__()
-        self.layers = torch.nn.Sequential(
-          torch.nn.Linear(input_dim, 128),
-          torch.nn.Linear(128, output_dim)
-        )
-        self.n_output_neurons = output_dim
-
-    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        outputs = self.layers(x)
-        return outputs
-
+torch.manual_seed(2023)
+np.random.seed(2023)
 
 class Model(nn.Module):
     def __init__(self, input_dim=768, output_dim=1000, model_type=None):
         super().__init__()
         if model_type == 'MLP':
             self.layers = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, output_dim)
+                torch.nn.Linear(input_dim, 128),
+                torch.nn.ReLU(),
+                torch.nn.Linear(128, output_dim)
             )
-        if model_type == 'Bigger':
+        if model_type == 'MLP-2':
             self.layers = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, 256),
-            torch.nn.ReLU(),
-            torch.nn.Linear(256, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, output_dim)
+                torch.nn.Linear(input_dim, 64),
+                torch.nn.ReLU(),
+                torch.nn.Linear(64, output_dim)
+            )
+        if model_type == 'MLP-3':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 256),
+                torch.nn.ReLU(),
+                torch.nn.Linear(256, output_dim)
+            )
+        if model_type == 'MLP-4':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 512),
+                torch.nn.ReLU(),
+                torch.nn.Linear(512, output_dim)
+            )
+        if model_type == 'MLP-5':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 256),
+                torch.nn.ReLU(),
+                torch.nn.Linear(256, 128),
+                torch.nn.ReLU(),
+                torch.nn.Linear(128, output_dim)
+            )
+        if model_type == 'MLP-6':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 32),
+                torch.nn.ReLU(),
+                torch.nn.Linear(32, output_dim)
+            )
+        if model_type == 'MLP-7':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 16),
+                torch.nn.ReLU(),
+                torch.nn.Linear(16, output_dim)
+            )
+        if model_type == 'MLP-8':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 8),
+                torch.nn.ReLU(),
+                torch.nn.Linear(8, output_dim)
+            )
+        if model_type == 'MLP-9':
+            self.layers = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, 8),
+                torch.nn.ReLU(),
+                torch.nn.Linear(input_dim, 16),
+                torch.nn.ReLU(),
+                torch.nn.Linear(16, output_dim)
             )
         self.n_output_neurons = output_dim
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         outputs = self.layers(x)
         return outputs
+
+
+def data_X_to_torch(data) -> torch.FloatTensor:
+    """ Creates torch training data."""
+    data_X = torch.from_numpy(np.array(data).astype(np.float32))
+    return data_X
+
+
+def data_to_torch(data, labels) -> Tuple[torch.FloatTensor, torch.LongTensor]:
+    """ Creates torch training data and labels."""
+    data_X = data_X_to_torch(data)
+    data_y = torch.as_tensor(torch.from_numpy(labels), dtype=torch.long)
+    return data_X, data_y
 
 
 def get_device() -> torch.device:
@@ -60,19 +103,6 @@ def get_device() -> torch.device:
     device = torch.device('cuda:0' if use_cuda else 'cpu')
     torch.backends.cudnn.benchmark = True
     return device
-
-
-def data_X_to_torch(data) -> torch.FloatTensor:
-    """ Creates torch training data."""
-    data_X = torch.from_numpy(np.array(data).astype(np.float32))
-    return data_X
-
-
-def data_to_torch(data, labels) -> Tuple[torch.FloatTensor, torch.LongTensor]:
-    """ Creates torch training data and labels."""
-    data_X = data_X_to_torch(data)
-    data_y = torch.as_tensor(torch.from_numpy(labels), dtype=torch.long)
-    return data_X, data_y
 
 
 class NeuralNetwork(Logger):
@@ -117,7 +147,6 @@ class NeuralNetwork(Logger):
         epochs=500,
         logger=None
     ):
-        #logger.debug(f'Epochs: {epochs}')
         step = epochs // 10
         losses = []
         if logger:
@@ -142,7 +171,6 @@ class NeuralNetwork(Logger):
         epochs=5,
         logger=None
     ):
-        #logger.debug(f'Epochs: {epochs}')
         step = epochs // 10
         step = step if step > 0 else 1
         losses = []
@@ -186,18 +214,12 @@ class NeuralNetwork(Logger):
             outputs = self.model(data_X.to(self.device))
 
         if outputs.dim() == 1:
-            dim=0
+            dim = 0
         else:
-            dim=1
+            dim = 1
         prob = nnf.softmax(outputs, dim=dim)
-        #print(prob.size(), prob.dim())
+        probs, classes = prob.topk(prob.shape[1])
 
-        if prob.dim() == 1:
-            probs, classes = prob.topk(prob.shape[0])
-        else:
-            probs, classes = prob.topk(prob.shape[1])
-        #print(prob[0].shape[0])
-        #print(prob.topk(prob[0].shape[0])[1].cpu().numpy())
         return probs.cpu().numpy(), classes.cpu().numpy()
 
 
@@ -207,18 +229,6 @@ class LIDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.dataset_x.shape[0]
-    
-    def __getitem__(self, idx):
-        return self.dataset_x[idx], self.dataset_y[idx]
 
-
-class LIDataset_Single(torch.utils.data.Dataset):
-    def __init__(self, dataset_x, dataset_y):
-        self.dataset_x, self.dataset_y = data_to_torch(dataset_x, dataset_y)
-
-    def __len__(self):
-        return self.dataset_x.shape[0]
-    
     def __getitem__(self, idx):
         return self.dataset_x[idx-1], self.dataset_y[idx-1]
-
