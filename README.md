@@ -29,7 +29,7 @@ The index uses K-Means partitioning from FAISS to create partitioning that is su
     - 0.009 learning rate
     - 4 leaf nodes stop condition
 
-### 300K:
+### 300K
 - **Recall:** 91.081%
 - **Search runtime (for 10k queries):** 21.93s
 - **Build time:** 786.8s
@@ -42,7 +42,7 @@ See also github actions
 ## How to reproduce
 
 ### Installation
-see also .github/workflows/ci.yml
+see also `.github/workflows/ci.yml`
 
 ```bash
 conda create -n env python=3.8

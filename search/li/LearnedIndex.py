@@ -135,7 +135,7 @@ class LearnedIndex(Logger):
             Array of shape (queries.shape[0], k) with nearest neighbors for each query.
         """
         nns = np.zeros((queries_search.shape[0], k), dtype=np.uint32)
-        dists = np.full(shape=(queries_search.shape[0], k), fill_value=10_000, dtype=np.float)
+        dists = np.full(shape=(queries_search.shape[0], k), fill_value=10_000, dtype=float)
 
         if 'category' in data_search.columns:
             data_search = data_search.drop('category', axis=1, errors='ignore')
