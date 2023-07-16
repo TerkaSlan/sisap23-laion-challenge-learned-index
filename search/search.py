@@ -36,7 +36,6 @@ def run(
 ):
     n_buckets_perc = [int((b/100)*n_categories) for b in n_buckets_perc]
     n_buckets_perc = list(set([b for b in n_buckets_perc if b > 0]))
-    print(n_buckets_perc, n_categories)
     LOG.info(
         f'Running with: kind={kind}, key={key}, size={size},'
         f' n_buckets_perc={n_buckets_perc}, n_categories={n_categories},'
@@ -194,13 +193,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--epochs",
-        default=210,
+        default=205,
         type=int,
         help='Number of epochs to train the model for'
     )
     parser.add_argument(
         "--model-type",
-        default='MLP-3',
+        default='MLP-5',
         type=str,
         help='Model type to use for the learned index'
     )

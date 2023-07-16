@@ -13,27 +13,29 @@ The index uses K-Means partitioning from FAISS to create partitioning that is su
 
 ## Results
 ### 10M
-- **Recall:** 91.039%
-- **Search runtime (for 10k queries):** 526.359743s
-- **Build time:** 32231.6s == ~9h
+- **Recall:** 90.883%
+- **Search runtime (for 10k queries):** 514.91s
+- **Build time:** 29538.4s == ~8.2h
 - **Datasets used:** pca96 for index building and navigation, clip768 for sequential search
 - **Hardware used:**
     - CPU: AMD EPYC 7532
-    - 36gb RAM
+    - 40gb RAM
     - 1 CPU core
-- **Time taken:** 9.5h
+- **Time taken:** <9h
 - **Hyperparameters:**
     - 122 leaf nodes
-    - 210 epochs
-    - 1 hidden layer with 256 neurons
+    - 205 epochs
+    - 2 hidden layers with 256 and 128 neurons
     - 0.009 learning rate
     - 4 leaf nodes stop condition
 
 ### 300K
-- **Recall:** 91.081%
-- **Search runtime (for 10k queries):** 21.93s
-- **Build time:** 786.8s
+- **Recall:** 91.1%
+- **Search runtime (for 10k queries):** 22.08s
+- **Build time:** 789.06s
 - **Datasets used:** pca96 for index building and navigation, clip768 for sequential search
+- **Hardware used:**
+    - CPU: AMD EPYC 7532
 - **Hyperparameters:**
     - same as for 10M, not optimized for this subset, 7 leaf nodes stop condition
 
