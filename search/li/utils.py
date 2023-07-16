@@ -32,7 +32,7 @@ def pairwise_cosine_threshold(x, y, threshold, cat_idxs, k=10):
         return None, t_pure_seq_search
     max_idx = max_idx if max_idx > k else k
     # output array filled with some large value
-    output_arr = np.full(shape=(result.shape[0], max_idx), fill_value=10_000, dtype=np.float)
+    output_arr = np.full(shape=(result.shape[0], max_idx), fill_value=10_000, dtype=float)
     # create indexes to store the relevant distances
     mapping = dict(zip(relevant_object_ids, np.arange(relevant_object_ids.shape[0])))
     # tried also with np.vectorize, wasn't faster

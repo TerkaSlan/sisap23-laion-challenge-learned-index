@@ -55,13 +55,13 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 ### Running
 ```bash
 pip install --editable .
-python3 search/search.py # for 10M index
-python3 search/search.py --size=300K -bp 6 # for 300K index
+python search/search.py # for 10M index
+python search/search.py --size=300K -bp 6 # for 300K index
 ```
 
 ### Evaluation
 ```bash
-python3 eval/eval.py
-python3 eval/plot.py res.csv
+python eval/eval.py
+python eval/plot.py res.csv
 cat res.csv
 ```
