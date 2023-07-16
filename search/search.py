@@ -5,12 +5,10 @@ import pandas as pd
 from sklearn import preprocessing
 import os
 import time
-from pathlib import Path
-from urllib.request import urlretrieve
 import logging
 from li.Baseline import Baseline
 from li.LearnedIndex import LearnedIndex
-from li.utils import save_as_pickle
+from li.utils import save_as_pickle, prepare, store_results
 from li.model import data_X_to_torch
 
 np.random.seed(2023)
@@ -20,40 +18,6 @@ logging.basicConfig(
     format='[%(asctime)s][%(levelname)-5.5s][%(name)-.20s] %(message)s'
 )
 LOG = logging.getLogger(__name__)
-
-
-def download(src, dst):
-    if not os.path.exists(dst):
-        os.makedirs(Path(dst).parent, exist_ok=True)
-        LOG.info('downloading %s -> %s...' % (src, dst))
-        urlretrieve(src, dst)
-
-
-def prepare(kind, size):
-    url = "https://sisap-23-challenge.s3.amazonaws.com/SISAP23-Challenge"
-    task = {
-        "query": f"{url}/public-queries-10k-{kind}.h5",
-        "dataset": f"{url}/laion2B-en-{kind}-n={size}.h5",
-    }
-
-    for version, url in task.items():
-        target_path = os.path.join("data", kind, size, f"{version}.h5")
-        download(url, target_path)
-        assert os.path.exists(target_path), f"Failed to download {url}"
-
-
-def store_results(dst, algo, kind, dists, anns, buildtime, querytime, params, size):
-    os.makedirs(Path(dst).parent, exist_ok=True)
-    f = h5py.File(dst, 'w')
-    f.attrs['algo'] = algo
-    f.attrs['data'] = kind
-    f.attrs['buildtime'] = buildtime
-    f.attrs['querytime'] = querytime
-    f.attrs['size'] = size
-    f.attrs['params'] = params
-    f.create_dataset('knns', anns.shape, dtype=anns.dtype)[:] = anns
-    f.create_dataset('dists', dists.shape, dtype=dists.dtype)[:] = dists
-    f.close()
 
 
 def run(
@@ -72,6 +36,7 @@ def run(
 ):
     n_buckets_perc = [int((b/100)*n_categories) for b in n_buckets_perc]
     n_buckets_perc = list(set([b for b in n_buckets_perc if b > 0]))
+    print(n_buckets_perc, n_categories)
     LOG.info(
         f'Running with: kind={kind}, key={key}, size={size},'
         f' n_buckets_perc={n_buckets_perc}, n_categories={n_categories},'
@@ -95,7 +60,7 @@ def run(
         baseline = Baseline()
         build_t = baseline.build(data)
         LOG.info(f'Build time: {build_t}')
-        dists, nns, search_t, inference_t, search_single_t, seq_search_t = baseline.search(
+        dists, nns, search_t = baseline.search(
             queries=queries,
             data=data,
             k=k
@@ -141,14 +106,18 @@ def run(
         LOG.info(f'Overall build time: {e-s}')
 
         if save:
-            save_filename = f'./models/{kind}-{size}-ep={epochs}-lr={lr}-cat={n_categories}-model={model_type}-prep={preprocess}-{os.environ["PBS_JOBID"]}'
+            save_filename = (
+                f'./models/{kind}-{size}-ep={epochs}-lr={lr}-cat={n_categories}'
+                f'-model={model_type}-prep={preprocess}'
+            )
             LOG.info(f'Saving as {save_filename}')
             save_as_pickle(f'{save_filename}.pkl', li)
 
         for bucket in n_buckets_perc:
+            s = time.time()
             LOG.info(f'Searching with {bucket} buckets')
             if bucket > 1:
-                dists, nns, search_t, inference_t, search_single_t, seq_search_t, pure_seq_search_t, sort_t = li.search(
+                dists, nns = li.search(
                     data_navigation=data,
                     queries_navigation=queries,
                     data_search=data_search,
@@ -158,33 +127,26 @@ def run(
                     k=k,
                     use_threshold=True
                 )
-                LOG.info('Inference time: %s', inference_t)
-                LOG.info('Search time: %s', search_t)
-                LOG.info('Search single time: %s', search_single_t)
-                LOG.info('Sequential search time: %s', seq_search_t)
-                LOG.info('Pure sequential search time: %s', pure_seq_search_t)
-                LOG.info('Sort time: %s', sort_t)
             else:
-                s = time.time()
                 _, pred_proba_categories = li.model.predict_proba(
                     data_X_to_torch(queries)
                 )
                 data['category'] = pred_categories
-                dists, nns, t_all, t_pairwise, t_pure_pairwise, t_sort = li.search_single(
+                dists, nns = li.search_single(
                     data_navigation=data,
                     data_search=data_search,
                     queries_search=queries_search,
                     pred_categories=pred_proba_categories[:, 0],
                     k=k
                 )
-                search_t = time.time() - s
-                LOG.info(f't_all: {t_all}')
-                LOG.info(f't_pairwise: {t_pairwise}')
-                LOG.info(f't_pure_pairwise: {t_pure_pairwise}')
-                LOG.info(f't_sort: {t_sort}')
+            search_t = time.time() - s
+            LOG.info(f'Search time: {search_t}')
 
             short_identifier = 'learned-index'
-            identifier = f'{short_identifier}-{kind}-{size}-ep={epochs}-lr={lr}-cat={n_categories}-model={model_type}-buck={bucket}-{os.environ["PBS_JOBID"]}'
+            identifier = (
+                f'{short_identifier}-{kind}-{size}-ep={epochs}-lr={lr}-cat='
+                f'{n_categories}-model={model_type}-buck={bucket}'
+            )
             store_results(
                 os.path.join(
                     "result/",
@@ -218,7 +180,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--size",
-        default="100K"
+        default="10M"
     )
     parser.add_argument(
         "--k",
@@ -226,49 +188,50 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--n-categories",
-        default=120,
-        type=int
+        default=122,
+        type=int,
+        help='Number of categories (= buckets) to create'
     )
     parser.add_argument(
         "--epochs",
-        default=200,
-        type=int
+        default=210,
+        type=int,
+        help='Number of epochs to train the model for'
     )
     parser.add_argument(
         "--model-type",
-        default='MLP-4',
-        type=str
+        default='MLP-3',
+        type=str,
+        help='Model type to use for the learned index'
     )
     parser.add_argument(
         "--lr",
-        default=0.01,
-        type=float
-    )
-    parser.add_argument(
-        '-b',
-        '--n-buckets',
-        nargs='+',
-        default=[2, 3, 4] #, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30]
+        default=0.009,
+        type=float,
+        help='Learning rate'
     )
     parser.add_argument(
         '-bp',
         '--buckets-perc',
         nargs='+',
-        default=[1, 2, 3, 4, 5] #, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30]
+        default=[4],
+        help='Percentage of the most similar buckets to look for the candidate answer in'
     )
     parser.add_argument(
         "--preprocess",
-        default=False,
-        type=bool
+        default=True,
+        type=bool,
+        help='Whether to normalize the data or not'
     )
     parser.add_argument(
         "--save",
-        default=True,
-        type=bool
+        default=False,
+        type=bool,
+        help='Whether to save the model or not'
     )
     args = parser.parse_args()
 
-    assert args.size in ["100K", "300K", "10M", "30M", "100M"]
+    assert args.size in ['100K', '300K', '10M', '30M', '100M']
 
     run(
         args.dataset,

@@ -2,16 +2,22 @@ import torch
 from torch import nn
 import torch.nn.functional as nnf
 import numpy as np
-from li.Logger import Logger
 from typing import Tuple
 import torch.utils.data
+from li.Logger import Logger
 
+
+# set seeds for reproducibility
 torch.manual_seed(2023)
 np.random.seed(2023)
 
+
 class Model(nn.Module):
-    def __init__(self, input_dim=768, output_dim=1000, model_type=None):
+    """ The model class representing the index. """
+    def __init__(self, input_dim=768, output_dim=1000, model_type=None):  # noqa: C901
         super().__init__()
+
+        # Various MLP architectures were explored
         if model_type == 'MLP':
             self.layers = torch.nn.Sequential(
                 torch.nn.Linear(input_dim, 128),

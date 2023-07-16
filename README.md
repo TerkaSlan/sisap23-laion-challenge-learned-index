@@ -12,21 +12,32 @@ The index uses K-Means partitioning from FAISS to create partitioning that is su
 
 
 ## Results
-**10M:**
-- Recall: 91.421%
-- Search runtime (for 10k queries): 663.86s
-- Build time: 20828s
-- Datasets used: pca96 for index building and navigation, clip768 for sequential search
-- Hardware used:
-    - CPU Intel Xeon Gold 6130
-    - 42gb RAM
+### 10M
+- **Recall:** 91.039%
+- **Search runtime (for 10k queries):** 526.359743s
+- **Build time:** 32231.6s == ~9h
+- **Datasets used:** pca96 for index building and navigation, clip768 for sequential search
+- **Hardware used:**
+    - CPU: AMD EPYC 7532
+    - 36gb RAM
     - 1 CPU core
-- Hyperparameters:
-    - 120 leaf nodes
-    - 200 epochs
-    - 1 hidden layer with 512 neurons
-    - 0.01 learning rate
+- **Time taken:** 9.5h
+- **Hyperparameters:**
+    - 122 leaf nodes
+    - 210 epochs
+    - 1 hidden layer with 256 neurons
+    - 0.009 learning rate
     - 4 leaf nodes stop condition
+
+### 300K:
+- **Recall:** 91.081%
+- **Search runtime (for 10k queries):** 21.93s
+- **Build time:** 786.8s
+- **Datasets used:** pca96 for index building and navigation, clip768 for sequential search
+- **Hyperparameters:**
+    - same as for 10M, not optimized for this subset, 7 leaf nodes stop condition
+
+See also github actions
 
 ## How to reproduce
 
@@ -44,17 +55,13 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 ### Running
 ```bash
 pip install --editable .
-python3 search/search.py
+python3 search/search.py # for 10M index
+python3 search/search.py --size=300K -bp 6 # for 300K index
 ```
 
 ### Evaluation
 ```bash
 python3 eval/eval.py
 python3 eval/plot.py res.csv
+cat res.csv
 ```
-
-## Hardware requirements
-**10M:**
-- 42gb RAM
-- 1 CPU core
-- ~6h of runtime (waries depending on the hardware)

@@ -5,11 +5,14 @@ import numpy as np
 
 
 class Baseline(Logger):
-
+    """ Baseline class for the learned index challenge,
+        used for testing purposes with data volume < 1M.
+    """
     def __init__(self):
         pass
 
     def search(self, queries, data, k=10):
+        """ Searches for the k nearest neighbors of the queries in the data in a bruteforce way. """
         s = time.time()
         anns = pairwise_cosine(data, queries).T
         nns = anns.argsort()[:, :k] + 1
