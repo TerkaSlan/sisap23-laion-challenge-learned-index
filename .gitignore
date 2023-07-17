@@ -1,5 +1,4 @@
 data
-*.csv
 *.png
 result
 **/*/.ipynb_checkpoints
